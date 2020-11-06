@@ -1,0 +1,20 @@
+base:
+  batch_seqlen: 512
+  hidden_dim: 512
+  projection_dim: 2048
+  n_heads: 8
+  head_dim: 64
+  n_layers: 12
+  dropout_rate: 0.1
+  dropatt_rate: 0.0
+
+large:
+  batch_seqlen: 1024
+  hidden_dim: 1024
+  projection_dim: 4096
+  n_heads: 16
+  head_dim: 64
+  n_layers: 18
+  dropout_rate: 0.1
+  dropatt_rate: 0.0
+
