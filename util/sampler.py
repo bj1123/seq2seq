@@ -54,6 +54,43 @@ class Sampler:
         self.use_cache = use_cache
         self.eos_index = eos_index
         self.sample_fn = self.stochastic_sample if mode in ['top-k', 'top-p'] else self.beam_sample
+        self.lp_a = kwargs.pop('length_penalty', None)
+
+    def _length_normalize(self, probs, generated_texts):
+        if self.lp_a:
+            l = self._get_lengths(generated_texts)  # [bs, width]
+            lp = (5 + l)**self.lp_a / 6**self.lp_a
+            return probs / lp[...,None]
+        else:
+            return probs
+
+    def _get_lengths(self, generated_texts):
+        """
+        return the length of generated texts till the eos token
+        :param generated_texts: torch.LongTensor size = (bs, width, len)
+        :return:
+        """
+        eos_index = self.eos_index
+        bs, width, lengths = generated_texts.size()
+        ind = (generated_texts == eos_index).nonzero(as_tuple=True)
+        x = torch.full((bs, width), lengths + 1, dtype=torch.float32)
+        x[ind[0].flip(0), ind[1].flip(0)] = ind[-1].flip(0).to(x.dtype) + 1
+        return x
+
+    def get_maxlen(self, inp):
+        batch_len = inp['src'].size(-1)
+        return min(self.max_len, int(batch_len * 1.2))
+
+    def truncate(self, indexed):
+        if self.eos_index not in indexed:
+            return indexed
+        else:
+            return indexed[:indexed.index(self.eos_index)+1]
+
+    def _mask_probs(self, probs, generated_texts):
+        eos_index = self.eos_index
+        mask = (generated_texts == eos_index).sum(-1) > 0
+        return probs.masked_fill(mask[...,None], 0)
 
     def _beam_start(self, out, inp):
         logits = out['logits'][:,-1]
@@ -86,16 +123,16 @@ class Sampler:
         logits = logits.view(bs, self.width, -1)
         # logits = block(logits,res,block_ngram)
         p, i = torch.topk(torch.log_softmax(logits, -1), self.width, -1)  # [batch_size, beam_size, beam_size]
+        p = self._mask_probs(p, inp['history'])
         probs = probs.unsqueeze(-1) + p
-        new_probs = probs.view(bs, -1)
-        probs, ni = new_probs.topk(self.width, -1)
+        _, ni = self._length_normalize(probs, inp['history']).view(bs, -1).topk(self.width, -1)
+        probs = probs.view(bs,-1).gather(1,ni)
         sampled = i.view(bs, -1).gather(1, ni)  # [bs, width]
         group = ni // self.width  # [bs, width]
         ind = [torch.arange(bs)[:, None], group]
         selected = inp['tgt'].view(bs, self.width, -1)[ind]
         if self.use_cache:
             new_tgt = sampled.view(-1,1)
-            print(new_tgt.size())
             tgt_mem = inp['tgt_mem']  # [bs * width, l, hidden]
             new_mem = out['tgt_mem']  # [bs * width, l, hidden]
             hidden_size = tgt_mem[0].size(-1)
@@ -141,11 +178,12 @@ class Sampler:
             top_sth = top_p_logits
         else:
             raise NotImplementedError('only support top-k or top-p sampling for stochastic sampling')
+        max_len = self.get_maxlen(inp)
         res = torch.LongTensor([]).to(inp['src'].device)
         with torch.no_grad():
             enc_out = self.model.encode_src(inp)
             inp['enc_out'] = enc_out
-            for _ in range(self.max_len):
+            for _ in range(max_len):
                 out = self.model(inp)
                 logits = top_sth(out['logits'][:,-1], self.width)
                 logits = logits / self.temperature
@@ -159,23 +197,23 @@ class Sampler:
     def beam_sample(self, inp):
         probs = torch.zeros((inp['src'].size(0), self.width), dtype=inp['src'].dtype, device=inp['src'].device)
         cnt = 0
+        max_len = self.get_maxlen(inp)
         with torch.no_grad():
             enc_out = self.model.encode_src(inp)
             inp['enc_out'] = enc_out
-            for _ in range(self.max_len):
-                print(_)
+            for _ in range(max_len):
                 cnt += 1
                 out = self.model(inp)
                 if cnt == 1:
                     probs, inp = self._beam_start(out, inp)
                 else:
                     probs, inp = self._beam_continue(out, probs, inp)
-
         res = self._beam_finalize(probs, inp)
         return res
 
     def sample(self, inp):
-        return self.sample_fn(inp)
+        sampled = self.sample_fn(inp).tolist()
+        return [self.truncate(i) for i in sampled]
 
 
 

@@ -47,15 +47,13 @@ class BaseBatchfier(IterableDataset):
                 new_lens.append(l)
         return new_texts, new_lens
 
-    def shuffle(self, df, num_buckets):
-        dfs = []
-        for bucket in range(num_buckets - 1):
-            new_df = df.iloc[bucket * self.size: (bucket + 1) * self.size]
-            dfs.append(new_df)
-        random.shuffle(dfs)
-        dfs.append(df.iloc[num_buckets - 1 * self.size: num_buckets * self.size])
-        df = pd.concat(dfs)
-        return df
+    def batch_indice(self, df):
+        num_buckets = len(df) // self.size
+        bs = self.size
+        ind = [i*bs for i in range(num_buckets)]
+        if self.epoch_shuffle:
+            random.shuffle(ind)
+        return ind
 
     def sort(self, df):
         return df.sort_values(self.criteria).reset_index(drop=True)
@@ -63,13 +61,14 @@ class BaseBatchfier(IterableDataset):
 
 class MTBatchfier(BaseBatchfier):
     def __init__(self, src_filepath, tgt_filepath, batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 4096,
-                 criteria: str = 'tgt_lens',
-                 padding_index=70000, epoch_shuffle=False, device='cuda'):
+                 criteria: str = 'tgt_lens', padding_index=30000, epoch_shuffle=True,
+                 sampling_mode=False, device='cuda'):
         super(MTBatchfier, self).__init__(batch_size, seq_len, minlen, maxlen, criteria, padding_index,
                                           epoch_shuffle, device)
         src_df = pd.read_pickle(src_filepath)
         tgt_df = pd.read_pickle(tgt_filepath)
         self.df = self.merge_dfs(src_df, tgt_df)
+        self.sampling_mode = sampling_mode
 
     @staticmethod
     def merge_dfs(src, tgt):
@@ -78,23 +77,25 @@ class MTBatchfier(BaseBatchfier):
         return pd.DataFrame({'src_texts': src.texts, 'src_lens': src_len,
                              'tgt_texts': tgt.texts, 'tgt_lens': tgt_len})
 
+    def __len__(self):
+        return len(self.df)
+
     def __iter__(self):
         df = self.df
-        cur_pos = 0
         if self.epoch_shuffle:
-            num_buckets = len(df) // self.size + (len(df) % self.size != 0)
             df = self.sort(df)
-            df = self.shuffle(df, num_buckets)
-
-        while cur_pos < len(df):
-            cur_batch = df.iloc[cur_pos:cur_pos + self.size]
-            cur_pos += self.size
-            src_texts = cur_batch['src_texts'].to_list()
-            src_lens = cur_batch['src_lens'].to_list()
-            tgt_texts = cur_batch['tgt_texts'].to_list()
-            tgt_lens = cur_batch['tgt_lens'].to_list()
-            for i in range(len(tgt_texts)):
-                yield src_texts[i], src_lens[i], tgt_texts[i], tgt_lens[i]
+        indice = self.batch_indice(df)
+        for l in indice:
+            cur_batch = df.iloc[l:l+self.size]
+            src_texts = cur_batch['src_texts'].tolist()
+            src_lens = cur_batch['src_lens'].tolist()
+            tgt_texts = cur_batch['tgt_texts'].tolist()
+            tgt_lens = cur_batch['tgt_lens'].tolist()
+            for i in range(len(src_texts)):
+                if self.sampling_mode:
+                    yield src_texts[i], src_lens[i], tgt_texts[i][:1], 1
+                else:
+                    yield src_texts[i], src_lens[i], tgt_texts[i], tgt_lens[i]
 
     def collate_fn(self, batch):
         src_texts = [torch.Tensor(item[0]).long() for item in batch]
@@ -102,7 +103,7 @@ class MTBatchfier(BaseBatchfier):
         tgt_texts = [torch.Tensor(item[2]).long() for item in batch]
         tgt_texts = torch.nn.utils.rnn.pad_sequence(tgt_texts, batch_first=True, padding_value=self.padding_index)
         src_lens = torch.Tensor([item[1] for item in batch]).long()
-        tgt_lens = torch.Tensor([item[1] for item in batch]).long()
+        tgt_lens = torch.Tensor([item[3] for item in batch]).long()
         return {'src': src_texts.to(self.device),
                 'src_len': src_lens.to(self.device),
                 'tgt': tgt_texts.to(self.device),

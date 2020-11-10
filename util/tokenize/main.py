@@ -3,12 +3,13 @@ from contextlib import contextmanager
 from multiprocessing import Process, Pool
 from util.files import *
 import re
+from util.tokenize.data_specific_tokenizer import *
 from util.tokenize.base_tokenizer import *
 
 MORPHS_ANALYZER_MAP = {'mecab': MecabAnalyzer, 'none': NullAnalyzer}
 TOKENIZER_MAP = {'sentencepiecebpe': tokenizers.SentencePieceBPETokenizer,
                  'wordpiece': tokenizers.BertWordPieceTokenizer}
-DATA_MAP = {'temp': TempTokenizer, }
+DATA_MAP = {'mtspace': MTSpaceTokenizer, }
 
 
 def get_parser():
@@ -17,7 +18,7 @@ def get_parser():
                         help='parent directory path')
     parser.add_argument("--inp-path", type=str,
                         help='directory where input data is stored')
-    parser.add_argument("--encoder-filename", type=str, default=r"lyrics",
+    parser.add_argument("--encoder-filename", type=str, default=r"mt",
                         help='encoder will be stored with this name')
     parser.add_argument("--out-path", type=str,
                         help='directory path where encoded data is stored')
@@ -39,7 +40,7 @@ def main():
                          tokenizer_class=tokenizer_class, morph_analyzer_class=morphs_analyzer_class,
                          jamo=args.split_jamo)
     print(args.directory_path, args.inp_path)
-    indexer.corpus_encode(args.inp_path, args.out_path)
+    indexer.corpus_encode(args.inp_path)
 
 
 if __name__ == "__main__":

@@ -149,12 +149,20 @@ class SpaceTokenizer(Tokenizer, ABC):
     def encode(self, text):
         dic = self.tokenizer[0]
         text = text.split()
-        return [dic[i] if i in dic else len(dic)-1 for i in text]
+        if self.sos:
+            text = [self.sos_token] + text
+        if self.eos:
+            text = text + [self.eos_token]
+        encoded = [dic[i] if i in dic else len(dic) - 1 for i in text]
+        return encoded
 
     def decode(self, indexed):
         inv_dic = self.tokenizer[1]
         res = [inv_dic[i] for i in indexed]
-        return ' '.join(res)
+        res = ' '.join(res)
+        res = res.replace(self.eos_token, '')
+        res = res.replace(self.sos_token, '')
+        return res.strip()
 
 
 class HFTokenizer(Tokenizer, ABC):  # Hugging Face tokenizers

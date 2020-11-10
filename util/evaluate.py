@@ -6,55 +6,8 @@ from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction, ngrams, 
 from collections import Counter
 from fractions import Fraction
 import numpy as np
-from rouge import Rouge
 from collections import defaultdict, Counter
 from nltk import ngrams
-
-
-def words_dist(cum_probs, texts):
-    def compute_boundaries(word, indices):
-        for idx, target in enumerate(indices):
-            if word < target:
-                return idx
-        return len(indices)
-
-    def get_indices(cum_prob):
-        x = [0.4, 0.7, 0.9]
-        cur = 0
-        res = []
-        for i in x:
-            while cum_prob[cur] < i:
-                cur += 1
-            res.append(cur)
-        return res
-
-    indices = get_indices(cum_probs)
-    res = [0, 0, 0, 0]
-    for text in texts:
-        for word in text:
-            res[compute_boundaries(word, indices)] += 1
-    return np.array(res) / sum(res)
-
-
-def repetition(hyps):
-    max_n = 100
-    n_repeated_examples = 0
-    for obj in hyps:
-        gen = obj
-        rev_gen = list(reversed(gen))
-        last_n_repeats = [0] * max_n
-
-        for n in range(1, max_n + 1):
-            n_repeat = 1
-            while len(rev_gen[n * n_repeat:n * (n_repeat + 1)]) == n and \
-                    rev_gen[n * n_repeat:n * (n_repeat + 1)] == rev_gen[:n]:
-                n_repeat += 1
-            last_n_repeats[n - 1] = n_repeat
-        max_repeated_n = max(range(max_n), key=lambda x: last_n_repeats[x])
-
-        if last_n_repeats[max_repeated_n] > 1 and (max_repeated_n + 1 >= 3 or last_n_repeats[max_repeated_n] > 50):
-            n_repeated_examples += 1
-    return n_repeated_examples / len(hyps)
 
 
 def pad_sequence(sequence, n, pad_left=False, pad_right=False,
@@ -104,27 +57,6 @@ def ngrams(sequence, n, pad_left=False, pad_right=False,
         del history[0]
 
 
-def rogue(hyps, refs, avg=True):
-    hyps = [' '.join(map(str, i)) for i in hyps]
-    refs = [' '.join(map(str, i)) for i in refs]
-    rouge = Rouge()
-    scores = rouge.get_scores(hyps, refs, avg=avg)
-    return [scores['rouge-1']['f'], scores['rouge-2']['f'], scores['rouge-l']['f']]
-
-
-def distinct_n_sentence_level(sentence, n):
-    """
-    Compute distinct-N for a single sentence.
-    :param sentence: a list of words.
-    :param n: int, ngram.
-    :return: float, the metric value.
-    """
-    if len(sentence) == 0:
-        return 0.0  # Prevent a zero division
-    distinct_ngrams = set(ngrams(sentence, n))
-    return len(distinct_ngrams) / len(sentence)
-
-
 def bleu_upto(reference, hypothesis, n_gram):
     res = []
     for i in range(1, n_gram + 1):
@@ -143,24 +75,6 @@ def calc_bleu_ngram(reference, hypothesis, n_gram):
         score += sentence_bleu([refer], hypo, (ratio,) * n_gram, cc.method1)
 
     return score / len(reference)
-
-
-def distinct_upto(sentences, n):
-    sentences = [i for i in sentences if len(i) > 5]
-    res = []
-    for i in range(1, n + 1):
-        res.append(distinct_n_corpus_level(sentences, i))
-    return res
-
-
-def distinct_n_corpus_level(sentences, n):
-    """
-    Compute average distinct-N of a list of sentences (the corpus).
-    :param sentences: a list of sentence.
-    :param n: int, ngram.
-    :return: float, the average value.
-    """
-    return sum(distinct_n_sentence_level(sentence, n) for sentence in sentences) / len(sentences)
 
 
 def bleu_single(reference, hypothesis, n_gram):
@@ -211,65 +125,6 @@ def seq_rep_n(corpus):
     return score / total_n
 
 
-def compute_probs(cnter, token_lists):
-    tot = 0
-    probs = []
-    for i in cnter:
-        tot += cnter[i]
-    for i in token_lists:
-        if i in cnter:
-            probs.append(cnter[i] / tot)
-        else:
-            probs.append(1e-10)
-    return np.array(probs)
-
-
-def kld(references, hypotheses, n_gram):
-    r_cnter = count(references, n_gram)
-    h_cnter = count(hypotheses, n_gram)
-
-    s = set(r_cnter.keys())
-    s.update(h_cnter.keys())
-    s = list(s)
-    r_probs = compute_probs(r_cnter, s)
-    h_probs = compute_probs(h_cnter, s)
-    kld = np.sum(r_probs * np.log(r_probs / h_probs))
-    return kld
-
-
-def entropy(x):
-    cnter = collections.Counter()
-    for line in x:
-        cnter.update(line)
-    tot = 0
-    prob = []
-    for i in cnter:
-        tot += cnter[i]
-    for i in cnter:
-        prob.append(cnter[i] / tot)
-    prob = np.array(prob)
-    ent = np.sum(prob * np.log(prob))
-    return -ent
-
-
-def ms_jaccard(ref, hyp, n_gram):
-    res = []
-    for i in range(1, 1 + n_gram):
-        rc = count(ref, i)
-        hc = count(hyp, i)
-        n_gram_set = set(rc.keys())
-        n_gram_set.update(hc.keys())
-        rprob = compute_probs(rc, n_gram_set)
-        hprob = compute_probs(hc, n_gram_set)
-        numerator = np.sum(np.minimum(rprob, hprob))
-        denominator = np.sum(np.maximum(rprob, hprob))
-        res.append(numerator / denominator)
-    score = []
-    for i in range(1, 1 + n_gram):
-        score.append(geo_mean(res[:i]))
-    return score
-
-
 class Refcnts:
     def __init__(self, references, n):
         self.ref_mcnts = {i: ref_cnts1(references, i) for i in range(1, n + 1)}
@@ -297,17 +152,6 @@ class Refcnts:
                 bleu_scores[i].append(s)
 
         return [np.mean(bleu_scores[i]) for i in range(1, self.n + 1)]
-
-    def ms_jaccard(self, ref, hyp, n_gram):
-        rc = count(ref, n_gram)
-        hc = count(hyp, n_gram)
-        n_gram_set = set(rc.keys())
-        n_gram_set.update(hc.keys())
-        rprob = compute_probs(rc, n_gram_set)
-        hprob = compute_probs(hc, n_gram_set)
-        numerator = np.sum(np.minimum(rprob, hprob))
-        denominator = np.sum(np.maximum(rprob, hprob))
-        return numerator / denominator
 
 
 def build_refcnts(references, n):
@@ -340,39 +184,6 @@ def bleu(ref_mcnts, ref_lens, hypothesis, n):
 
     return [np.mean(bleu_scores[i]) for i in range(1, n + 1)]
 
-
-def selfbleu(x, n):
-    x_mcnts = {i: ref_cnts2(x, i) for i in range(1, n + 1)}
-    x_lens = [len(i) for i in x]
-    bleu_scores = {i: [] for i in range(1, n + 1)}
-    for idx, hyp in enumerate(x):
-        p_numerators = Counter()  # Key = ngram order, and value = no. of ngram matches.
-        p_denominators = Counter()  # Key = ngram order, and value = no. of ngram in ref.
-        for i in range(1, n + 1):
-            p_i = modified_precision(x_mcnts[i], hyp, i, True)
-            p_numerators[i] = p_i.numerator
-            p_denominators[i] = p_i.denominator
-        hyp_lengths = len(hyp)
-        ref_lengths = closest_ref_length(iter(x_lens[:idx] + x_lens[idx + 1:]), hyp_lengths)
-        bp = brevity_penalty(ref_lengths, hyp_lengths)
-        for i in range(1, n + 1):
-            if p_numerators[i] == 0: p_numerators[i] = 1e-100
-            s = (1 / i * math.log(p_numerators[j] / p_denominators[j]) for j in range(1, i + 1))
-            s = bp * math.exp(math.fsum(s))
-            bleu_scores[i].append(s)
-    return [np.mean(bleu_scores[i]) for i in range(1, n + 1)]
-
-
-#
-# def selfbleu(x,n):
-#     logits = []
-#     bleu_scores = []
-#     for i in range(1,n+1):
-#         logit = selfbleu_logit(x,i)
-#         logits.append(logit)
-#         bleu_score = geo_mean(logits)
-#         bleu_scores.append(bleu_score)
-#     return bleu_scores
 
 def geo_mean(iterable):
     a = np.array(iterable)

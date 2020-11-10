@@ -4,7 +4,7 @@ from util.files import *
 import argparse
 
 
-class LMArgument:
+class MTArgument:
     def __init__(self, path='config', is_train=True):
         training_path = os.path.join(path, 'training.yaml')
         model_data = os.path.join(path,'model.yaml')
@@ -26,35 +26,39 @@ class LMArgument:
 
     def get_args(self, is_test=False):
         parser = argparse.ArgumentParser()
-        parser.add_argument("--filpath", type=str, default='temp.npy',
-                            help='numpy arr path')
-        parser.add_argument('--saved-path', type=str)
+        parser.add_argument("--src-path", type=str, help='numpy arr path')
+        parser.add_argument("--tgt-path", type=str, help='numpy arr path')
+        parser.add_argument('--saved-model-folder', type=str)
+        parser.add_argument('--saved-model-ckpt', type=str)
         parser.add_argument('--model-size', type=str, default='base')
-        parser.add_argument("--loss-type", help="choice [plain, losses that will be implemented in the future]",
-                            required=True, type=str)
+        parser.add_argument("--loss-type", help="choice [plain, label-smoothing,"
+                                                " losses that will be implemented in the future]",
+                            type=str)
         parser.add_argument('--pre-lnorm', action='store_true')
         parser.add_argument("--model-checkpoint", help="transfer for finetune model",default="", type=str)
         return parser
 
     def load_files(self, data):
-        dirname = os.path.join('data','saved_model')
+        dirname = os.path.join('data', 'saved_model')
         basename = '{}_{}'.format(data['model_size'], data['learning_rate'])
-
-        data['vocab_size'] = 6
-        data['padding_index'] = data['vocab_size']
+        data['train_src_path'] = os.path.join(data['src_path'],'train.pkl')
+        data['train_tgt_path'] = os.path.join(data['tgt_path'],'train.pkl')
+        data['test_src_path'] = os.path.join(data['src_path'],'test.pkl')
+        data['test_tgt_path'] = os.path.join(data['tgt_path'],'test.pkl')
+        data['padding_index'] = data['vocab_size'] - 1
         data['savename'] = os.path.join(dirname, basename)
+        if data['saved_model_folder'] and data['saved_model_ckpt']:
+            data['load_path'] = os.path.join(data['saved_model_folder'], data['saved_model_ckpt'])
 
 
-class SamplingArgument(LMArgument):
+class SamplingArgument(MTArgument):
     def __init__(self, path='config', is_train=True):
         super(SamplingArgument, self).__init__(path, is_train)
 
-    def load_files(self, data):
-        super().load_files(data)
-        data['encoder_dir'] = os.path.join(data['root'],data['dataset'])
-
     def get_args(self, is_test=True):
         parser = super().get_args(is_test)
-        parser.add_argument('--decoded-path', type=str)
-        parser.add_argument('--encoder-name', type=str)
+        parser.add_argument('--sample-save-path', type=str)
+        parser.add_argument('--sampling-mode', type=str)
+        parser.add_argument('--width', type=int)
+        parser.add_argument('--temperature', type=float, default=1.0)
         return parser

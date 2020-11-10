@@ -24,7 +24,7 @@ class Initializer:
             if hasattr(m, 'bias') and m.bias is not None:
                 self.init_bias(m.bias)
 
-        elif classname.find('Multihead_Att') != -1:
+        elif classname.find('MultiheadAtt') != -1:
             if hasattr(m, 'vec_u'):
                 self.init_weight(m.vec_u)
             if hasattr(m, 'vec_v'):
@@ -57,12 +57,12 @@ class Initializer:
         elif classname.find('Embedding') != -1:
             if hasattr(m, 'weight'):
                 self.init_weight(m.weight)
-
-        elif classname.find('LayerNorm') != -1:
-            if hasattr(m, 'weight'):
-                nn.init.normal_(m.weight, 1.0, self.value)
-            if hasattr(m, 'bias') and m.bias is not None:
-                self.init_bias(m.bias)
+        #
+        # elif classname.find('LayerNorm') != -1:
+        #     if hasattr(m, 'weight'):
+        #         nn.init.normal_(m.weight, 1.0, self.value)
+        #     if hasattr(m, 'bias') and m.bias is not None:
+        #         self.init_bias(m.bias)
 
     def initialize(self, m):
         m.apply(self.case_initialize)

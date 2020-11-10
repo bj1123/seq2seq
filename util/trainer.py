@@ -47,7 +47,6 @@ class Trainer:
             pbar.close()
             pbar = tqdm(100)
             return pbar, n_bar + 1, 0, 0, 0
-
         model = self.model
         batchfier = self.train_batchfier
         criteria = self.criteria
@@ -59,14 +58,13 @@ class Trainer:
         pbar = tqdm(100) # Null pbar
         pbar_cnt = 0
         model.zero_grad()
-
+        cnt = 0
         for inp in batchfier:
+            cnt+=1
             if check_empty_text(inp):
                 continue
             out = model(inp)
-
             loss = criteria(out['logits'], inp['label'])
-
             step_loss += loss.item()
             tot_loss += loss.item()
             if self.mixed_precision:

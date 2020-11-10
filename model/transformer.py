@@ -71,7 +71,7 @@ class BaseNetwork(nn.Module):
             if not self.embedding:
                 assert self.seq_len
                 self.embedding = TransformerEmbedding(self.vocab_size, hidden_dim, self.padding_index,
-                                                      self.seq_len, self.use_pos_emb)
+                                                      self.seq_len, dropout_rate, self.use_pos_emb)
             else:
                 assert isinstance(self.embedding, TransformerEmbedding)
 
@@ -204,8 +204,6 @@ class EncoderDecoderModel(nn.Module):
             enc_out = self.encode_src(inp)
         tgt_mask = self.decoder.get_mask(tgt_mem, tgt_len)
         tgt_to_src_mask = self.decoder.tgt_to_src_mask(src_len, tgt_len)
-        if tgt_mem:
-            print(tgt.size(), tgt_mem[0].size())
         dec_out, new_tgt_mem = self.decoder(enc_out, tgt, tgt_mem, tgt_mask, tgt_to_src_mask)
         logits = self.final(dec_out)
         return {'logits': logits,
