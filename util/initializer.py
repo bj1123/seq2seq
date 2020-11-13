@@ -3,7 +3,7 @@ import torch.nn as nn
 
 
 class Initializer:
-    def __init__(self,mode:str,value:float,dropout:float):
+    def __init__(self, mode: str, value: float, dropout: float):
         self.mode = mode
         self.value = value
         self.dropout = dropout

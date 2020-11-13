@@ -73,7 +73,7 @@ class Sampler:
         eos_index = self.eos_index
         bs, width, lengths = generated_texts.size()
         ind = (generated_texts == eos_index).nonzero(as_tuple=True)
-        x = torch.full((bs, width), lengths + 1, dtype=torch.float32)
+        x = torch.full((bs, width), lengths + 1, dtype=torch.float32).to(generated_texts.device)
         x[ind[0].flip(0), ind[1].flip(0)] = ind[-1].flip(0).to(x.dtype) + 1
         return x
 

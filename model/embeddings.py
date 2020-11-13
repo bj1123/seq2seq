@@ -142,6 +142,7 @@ class TransformerEmbedding(nn.Module):
         ks = qs + ms
         emb = self.word_embedding(x)
         if self.use_pos_emb:
+            emb *= math.sqrt(self.embedding_dim)
             pos_indicator = torch.arange(ms, ks, 1).clamp_max_(self.seq_len).to(emb.device)
             pos_ebd = self.posisition_embedding(pos_indicator)
             emb = pos_ebd + emb

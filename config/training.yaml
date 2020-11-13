@@ -1,4 +1,4 @@
-n_epoch: 5
+n_epoch: 10
 relative_pos: False
 gathered: True
 device: 'cuda'
@@ -7,8 +7,11 @@ gpu0_size: 8
 update_step: 8
 mixed_precision: True
 decay_step: 20000
-vocab_size: 30000
+vocab_size: 37000
 warmup_step: 4000
 clip_norm: 0.25
-learning_rate: 0.0005
+learning_rate: 0.00025
 weight_decay: 0.0001
+decay_on_valid: True
+shared_embedding: True
+tie_embedding: True

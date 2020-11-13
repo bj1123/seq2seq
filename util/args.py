@@ -61,4 +61,5 @@ class SamplingArgument(MTArgument):
         parser.add_argument('--sampling-mode', type=str)
         parser.add_argument('--width', type=int)
         parser.add_argument('--temperature', type=float, default=1.0)
+        parser.add_argument('--lengths-penalty', type=float, default=1.0)
         return parser

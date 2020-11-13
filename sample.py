@@ -35,7 +35,7 @@ def get_sampler(args, model, batchfier):
         opt_level = 'O2'
         model, optimizer = apex.amp.initialize(model, optimizer, opt_level=opt_level)
     trainer = Sampler(model, args.sampling_mode, 200, args.temperature, args.width, get_eos_index(batchfier),
-                      use_cache=True)
+                      use_cache=True, length_penalty=args.lengths_penalty)
     return trainer
 
 
@@ -54,4 +54,7 @@ if __name__ == '__main__':
         res.extend(sampler.sample(inp))
     if not os.path.exists(os.path.dirname(args.sample_save_path)):
         os.makedirs(os.path.dirname(args.sample_save_path))
-    json.dump(res, open(args.sample_save_path,'w'))
+    f = open(args.sample_save_path, 'w')
+    txts = [' '.join(map(str, i[:-1])) + ' \n' for i in res]
+    f.writelines(txts)
+    # json.dump(res, open(args.sample_save_path,'w'))

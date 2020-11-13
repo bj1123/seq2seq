@@ -30,9 +30,9 @@ class EncoderBlock(BaseBlock):
 
     def forward(self, inp, *args):
         x, mem, mask = inp
-        out, new_mem = self.self_att(x, x, mem, mask, *args)
+        out, new_mem, att_prob = self.self_att(x, x, mem, mask, *args)
         out = self.feedforward(out)
-        return out, new_mem
+        return out, new_mem, att_prob
 
 
 class DecoderBlock(BaseBlock):
@@ -45,10 +45,10 @@ class DecoderBlock(BaseBlock):
 
     def forward(self, inp, *args):
         src, tgt, tgt_mem, tgt_mask, tgt_to_src_mask = inp
-        out, new_mem = self.self_att(tgt, tgt, tgt_mem, tgt_mask, *args)
-        out, _ = self.multihead_att(out, src, None, tgt_to_src_mask, *args)  # if src is None, this step is skipped
+        out, new_mem, self_att_prob = self.self_att(tgt, tgt, tgt_mem, tgt_mask, *args)
+        out, _, inter_att_prob = self.multihead_att(out, src, None, tgt_to_src_mask, *args)  # if src is None, this step is skipped
         out = self.feedforward(out)
-        return out, new_mem
+        return out, new_mem, self_att_prob, inter_att_prob
 
 
 class BaseNetwork(nn.Module):
@@ -66,6 +66,7 @@ class BaseNetwork(nn.Module):
         self.same_lengths = same_lengths
         self.rel_att = rel_att
         self.is_bidirectional = is_bidirectional
+        self.hidden_dim = hidden_dim
         if self.vocab_size:
             self.use_pos_emb = False if rel_att else True
             if not self.embedding:
@@ -124,12 +125,14 @@ class EncoderNetwork(BaseNetwork):
         emb = self.embedding(x, mem)
         out = emb
         new_mems = []
+        enc_self_atts = []
         for i in range(self.n_layers):
             block = self.main_nets[i]
             mem_i = mem[i] if mem is not None else None
-            out, new_mem = block((out, mem_i, mask))
+            out, new_mem, self_att = block((out, mem_i, mask))
             new_mems.append(new_mem)
-        return out, new_mems
+            enc_self_atts.append(self_att)
+        return out, new_mems, enc_self_atts
 
 
 class DecoderNetwork(BaseNetwork):
@@ -164,13 +167,17 @@ class DecoderNetwork(BaseNetwork):
         emb = self.embedding(tgt, mem)
         out = emb
         new_mems = []
+        self_att_probs = []
+        inter_att_probs = []
         for i in range(self.n_layers):
             block = self.main_nets[i]
             mem_i = mem[i] if mem is not None else None
             main_inp = src, out, mem_i, tgt_mask, tgt_to_src_mask
-            out, new_mem = block(main_inp)
+            out, new_mem, self_att_prob, inter_att_prob = block(main_inp)
             new_mems.append(new_mem)
-        return out, new_mems
+            self_att_probs.append(self_att_prob)
+            inter_att_probs.append(inter_att_prob)
+        return out, new_mems, self_att_probs, inter_att_probs
 
 
 class EncoderDecoderModel(nn.Module):
@@ -182,33 +189,45 @@ class EncoderDecoderModel(nn.Module):
         self.encoder = EncoderNetwork(hidden_dim, projection_dim, n_heads, head_dim, enc_num_layers, dropout_rate,
                                       dropatt_rate, pre_lnorm, same_lengths, rel_att,
                                       vocab_size=vocab_size, seq_len=seq_len, padding_index=padding_index)
+        self.tie_embedding = tie_embedding
         if shared_embedding:
             kwargs_dict = {'embedding': self.encoder.embedding}
         else:
             kwargs_dict = {'vocab_size': vocab_size, 'seq_len': seq_len, 'padding_index': padding_index}
+
         self.decoder = DecoderNetwork(hidden_dim, projection_dim, n_heads, head_dim, dec_num_layers, dropout_rate,
                                       dropatt_rate, pre_lnorm, same_lengths, rel_att, **kwargs_dict)
-        self.final = nn.Linear(hidden_dim, vocab_size, bias=False)  # To-Do : implement tie embedding
+        if self.tie_embedding:
+            embedding_weight = self.encoder.embedding.word_embedding.weight
+            self.final = lambda x: torch.matmul(x, embedding_weight.T)
+
+        else:
+            self.final = nn.Linear(hidden_dim, vocab_size, bias=False)  # To-Do : implement tie embedding
 
     def encode_src(self, inp):
         src, src_len = inp['src'], inp['src_len']
         src_mask = self.encoder.get_mask(None, src_len)
-        enc_out, _ = self.encoder(src, None, src_mask)
-        return enc_out
+        enc_out, _, enc_self_atts = self.encoder(src, None, src_mask)
+        return enc_out, enc_self_atts
 
     def forward(self, inp):
         src, tgt, src_len, tgt_len = inp['src'], inp['tgt'], inp['src_len'], inp['tgt_len']
         enc_out = inp['enc_out'] if 'enc_out' in inp else None  # if src is already encoded. used in decoding phase
         tgt_mem = inp['tgt_mem'] if 'tgt_mem' in inp else None
+        out = {}
         if enc_out is None:
-            enc_out = self.encode_src(inp)
+            enc_out, enc_self_att = self.encode_src(inp)
+            out['enc_out'] = enc_out
+            out['enc_self_att'] = enc_self_att
         tgt_mask = self.decoder.get_mask(tgt_mem, tgt_len)
         tgt_to_src_mask = self.decoder.tgt_to_src_mask(src_len, tgt_len)
-        dec_out, new_tgt_mem = self.decoder(enc_out, tgt, tgt_mem, tgt_mask, tgt_to_src_mask)
+        dec_out, new_tgt_mem, dec_self_att, inter_att = self.decoder(enc_out, tgt, tgt_mem, tgt_mask, tgt_to_src_mask)
         logits = self.final(dec_out)
-        return {'logits': logits,
-                'enc_out': enc_out,
-                'tgt_mem': new_tgt_mem}
+        out['logits'] = logits
+        out['tgt_mem'] = new_tgt_mem
+        out['dec_self_att'] = dec_self_att
+        out['inter_att'] = inter_att
+        return out
 
 
 class LMModel(nn.Module):

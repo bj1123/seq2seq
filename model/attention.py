@@ -59,7 +59,7 @@ class MultiheadAtt(AttBase):
         attended = torch.einsum('bqkn,bknd->bqnd',att_prob,v)
         out = self.o_net(attended.contiguous().view(bs,qs,-1))
         out = self.dropout(out)
-        return out
+        return out, att_prob
 
     def forward(self, q, kv, mem, mask):
         """
@@ -83,12 +83,12 @@ class MultiheadAtt(AttBase):
         c = torch.cat([mem,kv],1)
         key, value = c.chunk(2,-1)
         query = self.q_net(q)
-        out = self.attend(query, key, value, mask)
+        out, att_prob = self.attend(query, key, value, mask)
 
         out = query + out
         if not self.pre_lnorm:
             out = self.layer_norm(out)
-        return out, kv
+        return out, kv, att_prob
 
 
 class RelMultiheadAtt(AttBase):

@@ -4,6 +4,7 @@ from model.ops import *
 import apex
 from util.losses import *
 from abc import ABC, abstractmethod
+import os
 
 
 def get_acc(logits, y):
@@ -29,7 +30,7 @@ def check_empty_text(x):
 
 class Trainer:
     def __init__(self, model, train_batchfier, test_batchfier, optimizers, schedulers,
-                 update_step, criteria, clip_norm, mixed_precision):
+                 update_step, criteria, clip_norm, mixed_precision, **kwargs):
         self.model = model
         self.train_batchfier = train_batchfier
         self.test_batchfier = test_batchfier
@@ -37,9 +38,15 @@ class Trainer:
         self.schedulers = schedulers
         self.criteria = criteria
         self.step = 0
+        self.epoch = -1
         self.update_step = update_step
         self.mixed_precision = mixed_precision
         self.clip_norm = clip_norm
+        self.intermittently_save_ckpt = kwargs.pop('intermittently_save_ckpt', None)
+        if self.intermittently_save_ckpt:
+            self.n_ckpt = kwargs.pop('n_ckpt', None)
+            self.target_cnt = len(self.train_batchfier) // self.n_ckpt
+            self.save_name = kwargs.pop('save_name', None)
 
     def train_epoch(self):
         def reset_pbar(pbar, n_bar):
@@ -47,6 +54,7 @@ class Trainer:
             pbar.close()
             pbar = tqdm(100)
             return pbar, n_bar + 1, 0, 0, 0
+        self.epoch +=1
         model = self.model
         batchfier = self.train_batchfier
         criteria = self.criteria
@@ -94,9 +102,17 @@ class Trainer:
                 pbar.update()
                 if pbar_cnt == 100:
                     pbar, n_bar, pbar_cnt, step_loss, acc = reset_pbar(pbar, n_bar)
+            if self.intermittently_save_ckpt:
+                if not tot_cnt % self.target_cnt:
+                    print('save!!!!!!!!!!!!!!!')
+                    torch.save(model.state_dict(),
+                               os.path.join(self.save_name,'epoch_{}_ckpt_{}'.format(self.epoch,
+                                                                                    tot_cnt // self.target_cnt)))
+
 
         pbar.close()
-        return math.exp(tot_loss / tot_cnt)
+        loss = math.exp(tot_loss / tot_cnt)
+        return loss
 
     def test_epoch(self):
         model = self.model
@@ -123,7 +139,10 @@ class Trainer:
                 description = criteria.get_description(pbar_cnt)
                 pbar.set_description(description)
         pbar.close()
-        return math.exp(step_loss / pbar_cnt)
+        loss = math.exp(step_loss / pbar_cnt)
+        if getattr(self.schedulers, 'decay_on_valid', None):
+            self.schedulers.decay_baselr(loss)
+        return loss
 
     def update_description(self, description, n_bar):
         description += 'lr : %f, iter : %d ' % (self.schedulers.get_last_lr()[0], n_bar)

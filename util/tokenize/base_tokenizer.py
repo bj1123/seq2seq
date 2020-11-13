@@ -79,8 +79,7 @@ class Tokenizer(ABC):
 
         for index, inp in enumerate(fl):
             if input_isdir:
-                basename, _ = os.path.splitext(inp)
-                basename = os.path.basename(basename)
+                basename = os.path.basename(inp)
                 out = os.path.join(out_dir, basename + '.pkl')
             else:
                 out = os.path.join(self.directory_path, out_path + '.pkl')
@@ -158,7 +157,7 @@ class SpaceTokenizer(Tokenizer, ABC):
 
     def decode(self, indexed):
         inv_dic = self.tokenizer[1]
-        res = [inv_dic[i] for i in indexed]
+        res = [inv_dic[i] if i in inv_dic else 'PAD' for i in indexed]
         res = ' '.join(res)
         res = res.replace(self.eos_token, '')
         res = res.replace(self.sos_token, '')
