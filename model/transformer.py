@@ -46,6 +46,7 @@ class DecoderBlock(BaseBlock):
     def forward(self, inp, *args):
         src, tgt, tgt_mem, tgt_mask, tgt_to_src_mask = inp
         out, new_mem, self_att_prob = self.self_att(tgt, tgt, tgt_mem, tgt_mask, *args)
+        print(src)
         out, _, inter_att_prob = self.multihead_att(out, src, None, tgt_to_src_mask, *args)  # if src is None, this step is skipped
         out = self.feedforward(out)
         return out, new_mem, self_att_prob, inter_att_prob
@@ -208,7 +209,7 @@ class EncoderDecoderModel(nn.Module):
         src, src_len = inp['src'], inp['src_len']
         src_mask = self.encoder.get_mask(None, src_len)
         enc_out, _, enc_self_atts = self.encoder(src, None, src_mask)
-        return enc_out, enc_self_atts
+        return {'enc_out': enc_out, 'enc_self_att': enc_self_atts}
 
     def forward(self, inp):
         src, tgt, src_len, tgt_len = inp['src'], inp['tgt'], inp['src_len'], inp['tgt_len']
@@ -216,9 +217,10 @@ class EncoderDecoderModel(nn.Module):
         tgt_mem = inp['tgt_mem'] if 'tgt_mem' in inp else None
         out = {}
         if enc_out is None:
-            enc_out, enc_self_att = self.encode_src(inp)
-            out['enc_out'] = enc_out
-            out['enc_self_att'] = enc_self_att
+            from_enc = self.encode_src(inp)
+            out['enc_out'] = from_enc['enc_out']
+            out['enc_self_att'] = from_enc['enc_self_att']
+            enc_out = from_enc['enc_out']
         tgt_mask = self.decoder.get_mask(tgt_mem, tgt_len)
         tgt_to_src_mask = self.decoder.tgt_to_src_mask(src_len, tgt_len)
         dec_out, new_tgt_mem, dec_self_att, inter_att = self.decoder(enc_out, tgt, tgt_mem, tgt_mask, tgt_to_src_mask)

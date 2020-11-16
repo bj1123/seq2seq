@@ -18,7 +18,11 @@ class CSVVisualizer:
             ind = tgt_text.index('PAD')
             tgt_text = tgt_text[:ind]
             att = att[:ind]
-        src_appended = [src_text] + att
+        if 'PAD' in src_text:
+            src_ind = src_text.index('PAD')
+        else:
+            src_ind = len(src_text)
+        src_appended = [src_text[:src_ind]] + list(map(lambda x: x[:src_ind], att))
         tgt_appended = list(map(lambda x: [x[0]] + x[1], zip([' '] + tgt_text, src_appended)))
         return tgt_appended
 

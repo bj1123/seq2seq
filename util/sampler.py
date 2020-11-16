@@ -200,7 +200,7 @@ class Sampler:
         max_len = self.get_maxlen(inp)
         with torch.no_grad():
             enc_out = self.model.encode_src(inp)
-            inp['enc_out'] = enc_out
+            inp['enc_out'] = enc_out['enc_out']
             for _ in range(max_len):
                 cnt += 1
                 out = self.model(inp)

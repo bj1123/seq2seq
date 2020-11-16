@@ -13,7 +13,8 @@ def get_model(args):
     model = EncoderDecoderModel(args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim, args.n_heads,
                                 args.head_dim, args.n_enc_layers, args.n_dec_layers, args.dropout_rate,
                                 args.dropatt_rate, args.padding_index, pre_lnorm=args.pre_lnorm,
-                                rel_att=args.relative_pos)
+                                rel_att=args.relative_pos, shared_embedding=args.shared_embedding,
+                                tie_embedding=args.tie_embedding)
     model.load_state_dict(torch.load(args.load_path))
     model = model.to(args.device)
     return model
