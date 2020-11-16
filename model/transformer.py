@@ -46,7 +46,6 @@ class DecoderBlock(BaseBlock):
     def forward(self, inp, *args):
         src, tgt, tgt_mem, tgt_mask, tgt_to_src_mask = inp
         out, new_mem, self_att_prob = self.self_att(tgt, tgt, tgt_mem, tgt_mask, *args)
-        print(src)
         out, _, inter_att_prob = self.multihead_att(out, src, None, tgt_to_src_mask, *args)  # if src is None, this step is skipped
         out = self.feedforward(out)
         return out, new_mem, self_att_prob, inter_att_prob

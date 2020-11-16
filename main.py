@@ -38,9 +38,10 @@ def get_batchfier(args):
 def get_loss(args):
     lt = args.loss_type
     if lt == 'plain':
-        loss = PlainLoss(args.padding_index)
-    elif lt == 'label-smoothing':
-        loss = LabelSmoothingLoss(args.vocab_size, ignore_index=args.padding_index, device=args.device)
+        if args.label_smoothing > 0:
+            loss = LabelSmoothingLoss(args.vocab_size, ignore_index=args.padding_index, device=args.device)
+        else:
+            loss = PlainLoss(args.padding_index)
     else:
         raise NotImplementedError
     return loss

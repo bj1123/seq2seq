@@ -60,14 +60,13 @@ class BaseBatchfier(IterableDataset):
 
 
 class MTBatchfier(BaseBatchfier):
-    def __init__(self, src_filepath, tgt_filepath, batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 4096,
+    def __init__(self, src_filepaths, tgt_filepaths, batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 4096,
                  criteria: str = 'tgt_lens', padding_index=30000, epoch_shuffle=True,
                  sampling_mode=False, device='cuda'):
         super(MTBatchfier, self).__init__(batch_size, seq_len, minlen, maxlen, criteria, padding_index,
                                           epoch_shuffle, device)
-        src_df = pd.read_pickle(src_filepath)
-        tgt_df = pd.read_pickle(tgt_filepath)
-        self.df = self.merge_dfs(src_df, tgt_df)
+        self.fl = (src_filepaths, tgt_filepaths)
+        self.tot_len = self.get_len()
         self.sampling_mode = sampling_mode
 
     @staticmethod
@@ -77,25 +76,29 @@ class MTBatchfier(BaseBatchfier):
         return pd.DataFrame({'src_texts': src.texts, 'src_lens': src_len,
                              'tgt_texts': tgt.texts, 'tgt_lens': tgt_len})
 
+    def get_len(self):
+        return sum([len(pd.read_pickle(i)) for i, _ in zip(*self.fl)])
+
     def __len__(self):
-        return len(self.df)
+        return self.tot_len
 
     def __iter__(self):
-        df = self.df
-        if self.epoch_shuffle:
-            df = self.sort(df)
-        indice = self.batch_indice(df)
-        for l in indice:
-            cur_batch = df.iloc[l:l+self.size]
-            src_texts = cur_batch['src_texts'].tolist()
-            src_lens = cur_batch['src_lens'].tolist()
-            tgt_texts = cur_batch['tgt_texts'].tolist()
-            tgt_lens = cur_batch['tgt_lens'].tolist()
-            for i in range(len(src_texts)):
-                if self.sampling_mode:
-                    yield src_texts[i], src_lens[i], tgt_texts[i][:1], 1
-                else:
-                    yield src_texts[i], src_lens[i], tgt_texts[i], tgt_lens[i]
+        for src_path, tgt_path in zip(*self.fl):
+            df = self.merge_dfs(pd.read_pickle(src_path), pd.read_pickle(tgt_path))
+            if self.epoch_shuffle:
+                df = self.sort(df)
+            indice = self.batch_indice(df)
+            for l in indice:
+                cur_batch = df.iloc[l:l+self.size]
+                src_texts = cur_batch['src_texts'].tolist()
+                src_lens = cur_batch['src_lens'].tolist()
+                tgt_texts = cur_batch['tgt_texts'].tolist()
+                tgt_lens = cur_batch['tgt_lens'].tolist()
+                for i in range(len(src_texts)):
+                    if self.sampling_mode:
+                        yield src_texts[i], src_lens[i], tgt_texts[i][:1], 1
+                    else:
+                        yield src_texts[i], src_lens[i], tgt_texts[i], tgt_lens[i]
 
     def collate_fn(self, batch):
         src_texts = [torch.Tensor(item[0]).long() for item in batch]

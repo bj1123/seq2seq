@@ -19,6 +19,18 @@ class BaseLoss(_Loss, ABC):
         self.cum_acc = 0
 
 
+class PlainWrapper(BaseLoss):
+    def __init__(self):
+        raise NotImplementedError
+    # To_Do
+
+
+class LabelSmoothingWrapper(BaseLoss):
+    def __init__(self):
+        raise NotImplementedError
+    # To_Do
+
+
 class PlainLoss(BaseLoss):
     def __init__(self, padding_idx: int, seq2seq=True):
         super(PlainLoss, self).__init__()

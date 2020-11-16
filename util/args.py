@@ -26,8 +26,9 @@ class MTArgument:
 
     def get_args(self, is_test=False):
         parser = argparse.ArgumentParser()
-        parser.add_argument("--src-path", type=str, help='numpy arr path')
-        parser.add_argument("--tgt-path", type=str, help='numpy arr path')
+        parser.add_argument("--src-path", type=str)
+        parser.add_argument("--tgt-path", type=str)
+        parser.add_argument("--dataset-name", type=str)
         parser.add_argument('--saved-model-folder', type=str)
         parser.add_argument('--saved-model-ckpt', type=str)
         parser.add_argument('--model-size', type=str, default='base')
@@ -41,12 +42,12 @@ class MTArgument:
     def load_files(self, data):
         dirname = os.path.join('data', 'saved_model')
         basename = '{}_{}'.format(data['model_size'], data['learning_rate'])
-        data['train_src_path'] = os.path.join(data['src_path'],'train.pkl')
-        data['train_tgt_path'] = os.path.join(data['tgt_path'],'train.pkl')
-        data['test_src_path'] = os.path.join(data['src_path'],'test.pkl')
-        data['test_tgt_path'] = os.path.join(data['tgt_path'],'test.pkl')
+        data['train_src_path'] = files_including(data['src_path'],'train')
+        data['train_tgt_path'] = files_including(data['tgt_path'],'train')
+        data['test_src_path'] = files_including(data['src_path'],'test')
+        data['test_tgt_path'] = files_including(data['tgt_path'],'test')
         data['padding_index'] = data['vocab_size'] - 1
-        data['savename'] = os.path.join(dirname, basename)
+        data['savename'] = os.path.join(dirname, basename, data['dataset_name'])
         if data['saved_model_folder'] and data['saved_model_ckpt']:
             data['load_path'] = os.path.join(data['saved_model_folder'], data['saved_model_ckpt'])
 
