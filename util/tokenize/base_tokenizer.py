@@ -6,9 +6,11 @@ from abc import abstractmethod, ABC
 from util.tokenize.index_mapper import *
 import collections
 import json
+from tokenizers import Tokenizer
+from tokenizers.models import *
 
 
-class Tokenizer(ABC):
+class BaseTokenizer(ABC):
     def __init__(self, dir_path, prefix, vocab_size=10000, use_imap=False, **kwargs):
         self.tokenizer, self.is_trained = self._load_tokenizer(dir_path, prefix)
         self.encoder_filename = prefix
@@ -102,7 +104,7 @@ class Tokenizer(ABC):
             self.imap.convert_corpus(out_dir)
 
 
-class SpaceTokenizer(Tokenizer, ABC):
+class SpaceTokenizer(BaseTokenizer, ABC):
     def __init__(self, dir_path, prefix, vocab_size, use_sos=True, use_eos=True, **kwargs):
         super(SpaceTokenizer, self).__init__(dir_path, prefix, vocab_size, **kwargs)
         self.sos = use_sos
@@ -164,8 +166,8 @@ class SpaceTokenizer(Tokenizer, ABC):
         return res.strip()
 
 
-class HFTokenizer(Tokenizer, ABC):  # Hugging Face tokenizers
-    def __init__(self, dir_path, prefix, vocab_size=10000, tokenizer_class=tokenizers.SentencePieceBPETokenizer,
+class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
+    def __init__(self, dir_path, prefix, vocab_size=10000, tokenizer_class=tokenizers.BertWordPieceTokenizer,
                  morph_analyzer_class=MecabAnalyzer, cleanser_class=NullCleanser,
                  use_imap=True, split_jamo=False, **kwargs):
         if split_jamo:
@@ -206,7 +208,7 @@ class HFTokenizer(Tokenizer, ABC):  # Hugging Face tokenizers
             tokenized_texts = self._read_file(inp, **kwargs)
             if isinstance(tokenized_texts[0], list):
                 tokenized_texts = [' '.join(i) for i in tokenized_texts]
-            with open(out, 'a') as f:
+            with open(out, 'w', encoding='utf8') as f:
                 f.writelines(tokenized_texts)
 
         input_isdir = os.path.isdir(inp_path)
@@ -215,8 +217,7 @@ class HFTokenizer(Tokenizer, ABC):  # Hugging Face tokenizers
         fl = self._get_files(inp_path, filter_train=True)
         procs = []
         for index, inp in enumerate(fl):
-            basename, _ = os.path.splitext(inp)
-            basename = os.path.basename(basename)
+            basename = os.path.basename(inp)
             if input_isdir:
                 out = os.path.join(out_path, basename + '.txt')
             else:
@@ -237,9 +238,9 @@ class HFTokenizer(Tokenizer, ABC):  # Hugging Face tokenizers
         def merge_texts(out_path):
             base_name = os.path.dirname(out_path)
             fl = self._get_files(out_path, filter_train=True)
-            with open(os.path.join(base_name, 'merged.txt'), 'w') as f:
+            with open(os.path.join(base_name, 'merged.txt'), 'w', encoding='utf8') as f:
                 for i in fl:
-                    with open(i) as t:
+                    with open(i, 'r', encoding='utf8') as t:
                         f.writelines(t.readlines())
 
         print('start encoder learning')

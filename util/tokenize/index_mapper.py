@@ -126,9 +126,13 @@ class IMap:
     def convert_line(self, line):
         assert self.dic is not None, 'dictionary must be built first'
         dic = self.dic
+        for i in dic.keys():
+            dic_key_type = type(i)
+            break
         converted = []
         for token in line:
-            converted.append(dic[str(token)])
+
+            converted.append(dic[dic_key_type(token)])
         return converted
 
     def rollback_line(self, indices):

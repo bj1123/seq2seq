@@ -17,7 +17,7 @@ class MTSpaceTokenizer(SpaceTokenizer):
 
 
 class WikiLargeTokenizer(HFTokenizer):
-    def __init__(self, directory_path, prefix, vocab_size, tokenizer_class=tokenizers.SentencePieceBPETokenizer,
+    def __init__(self, directory_path, prefix, vocab_size, tokenizer_class=tokenizers.BertWordPieceTokenizer,
                  morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser,
                  use_imap=True, split_jamo=False, **kwargs):
         super(WikiLargeTokenizer, self).__init__(directory_path, prefix, vocab_size, tokenizer_class,
@@ -25,9 +25,9 @@ class WikiLargeTokenizer(HFTokenizer):
                                                  **kwargs)
 
     def _read_file(self, file_path, **kwargs):
-        with open(file_path, 'r', encoding='utf8') as f:
+        with open(file_path, 'r', encoding='utf-8') as f:
             res = f.readlines()
-            res = list(map(lambda x: x.strip(), res))
+            res = list(map(lambda x: x, res))
         return res
 
     def _encode_file(self, inp, out, **kwargs):
