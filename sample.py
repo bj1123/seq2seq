@@ -7,6 +7,7 @@ from util.args import SamplingArgument
 from util.losses import *
 import apex
 from torch.utils.data.dataloader import DataLoader
+import time
 
 
 def get_model(args):
@@ -17,6 +18,7 @@ def get_model(args):
                                 tie_embedding=args.tie_embedding)
     model.load_state_dict(torch.load(args.load_path))
     model = model.to(args.device)
+    model.eval()
     return model
 
 
@@ -28,14 +30,12 @@ def get_batchfier(args):
 
 
 def get_sampler(args, model, batchfier):
-    def get_eos_index(batchfier):
-        return batchfier.dataset.df['tgt_texts'][0][-1]
 
     optimizer = torch.optim.AdamW(model.parameters(), args.learning_rate, weight_decay=args.weight_decay)  # for mixed
     if args.mixed_precision:
         opt_level = 'O2'
         model, optimizer = apex.amp.initialize(model, optimizer, opt_level=opt_level)
-    trainer = Sampler(model, args.sampling_mode, 200, args.temperature, args.width, get_eos_index(batchfier),
+    trainer = Sampler(model, args.sampling_mode, 200, args.temperature, args.width, batchfier.dataset.eos_idx,
                       use_cache=True, length_penalty=args.lengths_penalty)
     return trainer
 
@@ -49,13 +49,15 @@ if __name__ == '__main__':
     prev_step = 0
     res = []
     cnt = 0
+    t = time.time()
     for inp in batchfier:
         cnt +=1
         print(cnt)
         res.extend(sampler.sample(inp))
     if not os.path.exists(os.path.dirname(args.sample_save_path)):
         os.makedirs(os.path.dirname(args.sample_save_path))
-    f = open(args.sample_save_path, 'w')
-    txts = [' '.join(map(str, i[:-1])) + ' \n' for i in res]
-    f.writelines(txts)
-    # json.dump(res, open(args.sample_save_path,'w'))
+    print(time.time()-t)
+    # f = open(args.sample_save_path, 'w')
+    # txts = [' '.join(map(str, i[:-1])) + ' \n' for i in res]
+    # f.writelines(txts)
+    json.dump(list(map(lambda x: x[:-1],res)), open(args.sample_save_path,'w'))

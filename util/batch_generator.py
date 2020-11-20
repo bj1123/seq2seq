@@ -6,7 +6,6 @@ import os
 import pickle
 from abc import *
 from torch.utils.data.dataset import Dataset, IterableDataset
-import math
 
 
 class BaseBatchfier(IterableDataset):
@@ -48,7 +47,7 @@ class BaseBatchfier(IterableDataset):
         return new_texts, new_lens
 
     def batch_indice(self, df):
-        num_buckets = len(df) // self.size
+        num_buckets = len(df) // self.size + (len(df) % self.size != 0)
         bs = self.size
         ind = [i*bs for i in range(num_buckets)]
         if self.epoch_shuffle:
@@ -66,7 +65,7 @@ class MTBatchfier(BaseBatchfier):
         super(MTBatchfier, self).__init__(batch_size, seq_len, minlen, maxlen, criteria, padding_index,
                                           epoch_shuffle, device)
         self.fl = (src_filepaths, tgt_filepaths)
-        self.tot_len = self.get_len()
+        self.tot_len, self.eos_idx = self.initialize()
         self.sampling_mode = sampling_mode
 
     @staticmethod
@@ -76,8 +75,13 @@ class MTBatchfier(BaseBatchfier):
         return pd.DataFrame({'src_texts': src.texts, 'src_lens': src_len,
                              'tgt_texts': tgt.texts, 'tgt_lens': tgt_len})
 
-    def get_len(self):
-        return sum([len(pd.read_pickle(i)) for i, _ in zip(*self.fl)])
+    def initialize(self):
+        l = 0
+        for _, i in zip(*self.fl):
+            temp = pd.read_pickle(i)
+            l += len(temp)
+        eos = temp.texts[0][-1]
+        return l, eos
 
     def __len__(self):
         return self.tot_len

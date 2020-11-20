@@ -57,7 +57,6 @@ class WarmupLinearSchedule(LambdaLR):
         return lrmbda
 
     def decay_baselr(self, val_loss):
-        print('decay_coefffffffffffffff')
         if val_loss > self.before_loss:
             self.decay_coef *= 0.5
         self.before_loss = val_loss

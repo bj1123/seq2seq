@@ -7,15 +7,15 @@ import argparse
 class MTArgument:
     def __init__(self, path='config', is_train=True):
         training_path = os.path.join(path, 'training.yaml')
-        model_data = os.path.join(path,'model.yaml')
+        model_data = os.path.join(path, 'model.yaml')
         data = {}
-        with open(training_path, "r") as t, open(model_data,'r') as m:
+        with open(training_path, "r") as t, open(model_data, 'r') as m:
             training_data = yaml.load(t.read(), Loader=yaml.FullLoader)
             model_data = yaml.load(m.read(), Loader=yaml.FullLoader)
         self.is_train = is_train
         args = self.get_args(is_test=not is_train)
         args = args.parse_args()
-        if args.model_size =='base':
+        if args.model_size == 'base':
             data.update(model_data['base'])
         else:
             data.update(model_data['large'])
@@ -36,18 +36,18 @@ class MTArgument:
                                                 " losses that will be implemented in the future]",
                             type=str)
         parser.add_argument('--pre-lnorm', action='store_true')
-        parser.add_argument("--model-checkpoint", help="transfer for finetune model",default="", type=str)
+        parser.add_argument("--model-checkpoint", help="transfer for finetune model", default="", type=str)
         return parser
 
     def load_files(self, data):
-        dirname = os.path.join('data', 'saved_model')
+        dirname = os.path.join('data', 'saved_model', data['dataset_name'])
         basename = '{}_{}'.format(data['model_size'], data['learning_rate'])
-        data['train_src_path'] = files_including(data['src_path'],'train')
-        data['train_tgt_path'] = files_including(data['tgt_path'],'train')
-        data['test_src_path'] = files_including(data['src_path'],'test')
-        data['test_tgt_path'] = files_including(data['tgt_path'],'test')
+        data['train_src_path'] = files_including(data['src_path'], 'train')
+        data['train_tgt_path'] = files_including(data['tgt_path'], 'train')
+        data['test_src_path'] = files_including(data['src_path'], 'test')
+        data['test_tgt_path'] = files_including(data['tgt_path'], 'test')
         data['padding_index'] = data['vocab_size'] - 1
-        data['savename'] = os.path.join(dirname, basename, data['dataset_name'])
+        data['savename'] = os.path.join(dirname, basename)
         if data['saved_model_folder'] and data['saved_model_ckpt']:
             data['load_path'] = os.path.join(data['saved_model_folder'], data['saved_model_ckpt'])
 

@@ -37,6 +37,8 @@ class IMap:
 
     @staticmethod
     def get_columns(df_path):
+        if isinstance(df_path,list):
+            df_path = df_path[0]
         df = pd.read_pickle(df_path)
         c = df.columns
         tar = set()
