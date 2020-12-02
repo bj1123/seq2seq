@@ -4,7 +4,7 @@ export PYTHONPATH="${PYTHONPATH}:../"
 echo $PYTHONPATH
 
 DATASET=wikilarge
-CKPT=epoch_4
+CKPT=epoch_7
 LR=0.0001
 
 CUDA_VISIBLE_DEVICES=0 python sample.py \
@@ -15,6 +15,6 @@ CUDA_VISIBLE_DEVICES=0 python sample.py \
   --sample-save-path data/sampled/$DATASET/base_$LR/$CKPT \
   --sampling-mode beam \
   --dataset-name $DATASET \
-  --width 4 \
-  --lengths-penalty 0.6 \
+  --width 8 \
+  --lengths-penalty 0.2 \
   --model-size base;

@@ -196,10 +196,10 @@ class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
             inp = (base_name + '-vocab.json', base_name + '-merges.txt')
         if check_existence(inp):
             print('trained encoder loaded')
-            return tokenizer_class(*inp), True
+            return tokenizer_class(*inp, lowercase=False), True
         else:
             print('encoder needs to be trained')
-            return tokenizer_class(), False
+            return tokenizer_class(lowercase=False), False
 
     def _write_to_txt(self, inp_path, out_path, **kwargs):
         def write_one(inp, out):

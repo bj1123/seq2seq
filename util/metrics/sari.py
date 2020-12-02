@@ -24,6 +24,9 @@ import argparse
 import pandas as pd
 import numpy as np
 from util.tokenize.data_specific_tokenizer import *
+from easse.sari import get_corpus_sari_operation_scores
+from util.tokenize import data_specific_tokenizer
+
 
 def ReadInFile(filename):
     with open(filename) as f:
@@ -182,6 +185,9 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--gt-path", type=str)
     parser.add_argument("--sample-path", type=str)
+    parser.add_argument("--decoder-dir", type=str)
+    parser.add_argument("--src-decoder-name", type=str)
+    parser.add_argument("--tgt-decoder-name", type=str)
     return parser.parse_args()
 
 
@@ -191,7 +197,7 @@ def get_paths(gt_path):
     return src_paths, ref_paths
 
 
-def read_dfs(paths):
+def read_dfs(paths, dec):
     res = []
     for i in paths:
         texts = pd.read_pickle(i).texts
@@ -211,9 +217,15 @@ def main():
     args = get_args()
 
     src_paths, refs_paths = get_paths(args.gt_path)
-    src = read_dfs(src_paths)
-    samples = read_json(args.sample_path)
-    refs = read_dfs(refs_paths)
+    if args.decoder_dir:
+        src_dec = data_specific_tokenizer.WikiLargeTokenizer(args.decoder_dir, args.src_decoder_name, None)
+        tgt_dec = data_specific_tokenizer.WikiLargeTokenizer(args.decoder_dir, args.tgt_decoder_name, None)
+    else:
+        src_dec = None
+        tgt_dec = None
+    src = read_dfs(src_paths, src_dec)
+    samples = read_json(args.sample_path, tgt_dec)
+    refs = read_dfs(refs_paths, tgt_dec)
     res = []
     for i in range(len(samples)):
         res.append(SARIsent(src[i], samples[i], refs[i]))
