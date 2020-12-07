@@ -5,11 +5,12 @@ import argparse
 
 
 class IMap:
-    def __init__(self, dir_path, prefix, vocab_size, **kwargs):
+    def __init__(self, dir_path, prefix, vocab_size, added_special_tokens=None, **kwargs):
         self.dir_path = dir_path
         self.prefix = prefix
         self.probs_path, self.dic_path = self.get_path(dir_path, prefix)
         self.vocab_size = vocab_size
+        self.added_special_tokens = added_special_tokens
         self.dic, self.inv_dic = self.load_dic(self.dic_path)
         self.target_names = kwargs.pop('target_names', None)
 
@@ -72,6 +73,10 @@ class IMap:
         sc = set(cnter)
         cnter.update(s.difference(sc))
         cnter.update(set(range(vocab_size)).difference(sc))
+
+        # special tokens
+        if self.added_special_tokens:
+            cnter.update(self.added_special_tokens)
 
         tot = sum(cnter.values())
         cum_prob = [0]

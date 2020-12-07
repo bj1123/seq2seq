@@ -173,3 +173,15 @@ class NullCleanser(Cleanser):
 
     def cleanse(self, x, **kwargs):
         return x
+
+
+class AIHubMTCleanser(Cleanser):
+    def __init__(self):
+        super(AIHubMTCleanser, self).__init__()
+        self.parenthise_chinese =\
+            re.compile(u'\([⺀-⺙⺛-⻳⼀-⿕々〇〡-〩〸-〺〻㐀-䶵一-鿃豈-鶴侮-頻並-龎]+\)', re.UNICODE)
+
+    def cleanse(self, x, **kwargs):
+        x = self.parenthise_chinese.sub('',x)
+        x = self.cleanse_special_symbols(x)
+        return x

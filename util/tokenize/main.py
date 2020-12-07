@@ -1,15 +1,11 @@
-import argparse
-from contextlib import contextmanager
-from multiprocessing import Process, Pool
-from util.files import *
-import re
 from util.tokenize.data_specific_tokenizer import *
 from util.tokenize.base_tokenizer import *
+from util.tokenize.data_reformatter import *
 
 MORPHS_ANALYZER_MAP = {'mecab': MecabAnalyzer, 'none': NullAnalyzer}
 TOKENIZER_MAP = {'sentencepiecebpe': tokenizers.SentencePieceBPETokenizer,
                  'wordpiece': tokenizers.BertWordPieceTokenizer}
-DATA_MAP = {'mtspace': MTSpaceTokenizer, }
+DATA_MAP = {'mtspace': MTSpaceTokenizer, 'multitask': XLSXMultiTaskTokenizer}
 
 
 def get_parser():

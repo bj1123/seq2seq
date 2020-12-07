@@ -81,16 +81,22 @@ class Sampler:
         batch_len = inp['src'].size(-1)
         return min(self.max_len, int(batch_len * 1.2))
 
-    def truncate(self, indexed):
+    def truncate_eos(self, indexed):
         if self.eos_index not in indexed:
             return indexed
         else:
             return indexed[:indexed.index(self.eos_index)+1]
 
     def _mask_probs(self, probs, generated_texts):
+        # not update probs if eos is already generated
         eos_index = self.eos_index
         mask = (generated_texts == eos_index).sum(-1) > 0
         return probs.masked_fill(mask[...,None], 0)
+
+    def _kill_eos(self, probs, generated_texts):
+        eos_index = self.eos_index
+        mask = (generated_texts == eos_index)
+        return probs.masked_fill(mask, -1e2)
 
     def _beam_start(self, out, inp):
         logits = out['logits'][:,-1]
@@ -116,7 +122,7 @@ class Sampler:
         inp['history'] = i[..., None]  # [bs, width, 1]
         return probs, inp
 
-    def _beam_continue(self, out, probs, inp):
+    def _beam_continue(self, out, probs, inp, no_eos=False):
         logits = out['logits'][:,-1]
         bs = logits.size(0) // self.width
         logits = logits / self.temperature
@@ -124,6 +130,8 @@ class Sampler:
         # logits = block(logits,res,block_ngram)
         p, i = torch.topk(torch.log_softmax(logits, -1), self.width, -1)  # [batch_size, beam_size, beam_size]
         p = self._mask_probs(p, inp['history'])
+        if no_eos:
+            p = self._kill_eos(p, i)
         probs = probs.unsqueeze(-1) + p
         _, ni = self._length_normalize(probs, inp['history']).view(bs, -1).topk(self.width, -1)
         probs = probs.view(bs,-1).gather(1,ni)
@@ -204,16 +212,19 @@ class Sampler:
             for _ in range(max_len):
                 cnt += 1
                 out = self.model(inp)
+                no_eos = cnt <= 3
                 if cnt == 1:
                     probs, inp = self._beam_start(out, inp)
                 else:
-                    probs, inp = self._beam_continue(out, probs, inp)
+                    probs, inp = self._beam_continue(out, probs, inp, no_eos)
+
+
         res = self._beam_finalize(probs, inp)
         return res
 
     def sample(self, inp):
         sampled = self.sample_fn(inp).tolist()
-        return [self.truncate(i) for i in sampled]
+        return [self.truncate_eos(i) for i in sampled]
 
 
 

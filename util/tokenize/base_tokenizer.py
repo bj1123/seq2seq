@@ -25,11 +25,13 @@ class BaseTokenizer(ABC):
             return [path]
         elif os.path.isdir(path):
             # check whether the files are split into test, val set
-            trains = list(filter(lambda x: 'train' in os.path.basename(x), get_files(path)))
+            temp = get_files(path)
+            temp = list(filter(lambda x: '/raw/' not in os.path.dir(x), temp))
+            trains = list(filter(lambda x: 'train' in os.path.basename(x), temp))
             if filter_train and trains:
                 return trains
             else:
-                return get_files(path)
+                return temp
 
     @abstractmethod
     def _read_file(self, file_path, **kwargs):
@@ -168,7 +170,7 @@ class SpaceTokenizer(BaseTokenizer, ABC):
 
 class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
     def __init__(self, dir_path, prefix, vocab_size=10000, tokenizer_class=tokenizers.BertWordPieceTokenizer,
-                 morph_analyzer_class=MecabAnalyzer, cleanser_class=NullCleanser,
+                 morph_analyzer_class=MecabAnalyzer, cleanser_class=NullCleanser, tokens_to_add=None,
                  use_imap=True, split_jamo=False, **kwargs):
         if split_jamo:
             assert tokenizer_class == tokenizers.BertWordPieceTokenizer, \
@@ -178,9 +180,10 @@ class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
             self.space_symbol = '‐'
         self.morph_analyzer = morph_analyzer_class(space_symbol=self.space_symbol, jamo=split_jamo)
         self.cleanser = cleanser_class()
-        self.imap = IMap(dir_path, prefix, vocab_size) if use_imap else None
+        self.imap = IMap(dir_path, prefix, vocab_size, tokens_to_add) if use_imap else None
         self.split_jamo = split_jamo
         self.tokenizer_class = tokenizer_class
+        self.tokens_to_add = tokens_to_add
         super(HFTokenizer, self).__init__(dir_path, prefix, vocab_size, use_imap, **kwargs)
 
     def _load_tokenizer(self, directory_path, encoder_filename):
@@ -255,6 +258,8 @@ class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
         base_name = os.path.dirname(out_path)
         tokenizer.train(os.path.join(base_name, 'merged.txt'), vocab_size=self.vocab_size)
         self.istrained = True
+        if self.tokens_to_add:
+            tokenizer.add_special_tokens(self.tokens_to_add)
         print('finished encoder learning')
         return tokenizer
 
