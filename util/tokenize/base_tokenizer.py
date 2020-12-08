@@ -26,7 +26,7 @@ class BaseTokenizer(ABC):
         elif os.path.isdir(path):
             # check whether the files are split into test, val set
             temp = get_files(path)
-            temp = list(filter(lambda x: '/raw/' not in os.path.dir(x), temp))
+            temp = list(filter(lambda x: '/raw' not in os.path.dirname(x), temp))
             trains = list(filter(lambda x: 'train' in os.path.basename(x), temp))
             if filter_train and trains:
                 return trains
@@ -65,9 +65,6 @@ class BaseTokenizer(ABC):
         pass
 
     def corpus_encode(self, inp_path, **kwargs):
-        out_path = os.path.splitext(inp_path)[0] + self.out_name
-        assert os.path.isdir(inp_path) == os.path.isdir(out_path), \
-            'os.path.isdir(inp_path) != os.path.isdir(out_path), should be matched'
         if not self.is_trained:
             enc = self._learn_tokenizer(inp_path, **kwargs)
             self._save_tokenizer(enc)
@@ -77,16 +74,16 @@ class BaseTokenizer(ABC):
         procs = []
         fl = self._get_files(inp_path)
         input_isdir = os.path.isdir(inp_path)
-        out_dir = os.path.join(self.directory_path, out_path)
-        if not os.path.exists(out_dir) and input_isdir:
-            os.makedirs(out_dir)
 
         for index, inp in enumerate(fl):
             if input_isdir:
-                basename = os.path.basename(inp)
-                out = os.path.join(out_dir, basename + '.pkl')
+                dir_name = os.path.dirname(inp)
+                basename = os.path.splitext(os.path.basename(inp))[0]
+                out = os.path.join(dir_name + '_encoded', basename + '.pkl')
+                if not os.path.exists(os.path.dirname(out)):
+                    os.makedirs(os.path.dirname(out))
             else:
-                out = os.path.join(self.directory_path, out_path + '.pkl')
+                out = os.path.join(self.directory_path, os.path.splitext(inp_path)[0] + 'encoded.pkl')
             self._encode_file(inp, out)
 
         # for index, inp in enumerate(fl):

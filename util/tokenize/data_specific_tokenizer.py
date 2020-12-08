@@ -47,8 +47,8 @@ class XLSXMultiTaskTokenizer(HFTokenizer):
                                                **kwargs)
 
     @staticmethod
-    def open_xlsx(file_path):
-        res = pd.read_excel(file_path)
+    def read_pickle(file_path):
+        res = pd.read_pickle(file_path)
         src = res['src'].tolist()
         tgt = res['tgt'].tolist()
         return src, tgt
@@ -62,18 +62,29 @@ class XLSXMultiTaskTokenizer(HFTokenizer):
 
     @staticmethod
     def count_words(texts):
-        return sum([len(i.split()) for i in texts])
+        return len(texts)  # criteria: n_sentences
+        # return sum([len(i.split()) for i in texts])  # criteria: n_words
 
     def _read_file(self, file_path, **kwargs):
-        if os.path.splitext(file_path)[-1] == 'xlsx':
-            src, tgt = self.open_xlsx(file_path)
-            return src + tgt
+        ratio = kwargs.get('ratio')  # en / ko
+        if os.path.splitext(file_path)[-1] == '.pkl':
+            res = []
+            src, tgt = self.read_pickle(file_path)
+            for i in [src, tgt]:
+                iskorean = self.is_korean(src)
+                if iskorean:
+                    res.extend(i * (int(ratio) - 1))
+                    remainder = int(len(src) * (ratio - int(ratio)))
+                    res.extend(i[:remainder])
+                else:
+                    res.extend(i)
+            return res
         else:
             return []
 
     def _encode_file(self, inp, out, **kwargs):
-        if os.path.splitext(inp)[-1] == 'xlsx':
-            src, tgt = self.open_xlsx(inp)
+        if os.path.splitext(inp)[-1] == '.pkl':
+            src, tgt = self.read_pickle(inp)
             src_encoded = [self.tokenizer.encode(i.rstrip()).ids for i in src]
             tgt_encoded = [self.tokenizer.encode(i.rstrip()).ids for i in tgt]
             df = pd.DataFrame({'src': src_encoded, 'tgt': tgt_encoded})
@@ -84,17 +95,20 @@ class XLSXMultiTaskTokenizer(HFTokenizer):
         en = 0
         files = self._get_files(file_path)
         for file in files:
-            src, tgt = self.open_xlsx(file)
-            for i in [src, tgt]:
-                if self.is_korean(i):
-                    ko += self.count_words(i)
-                else:
-                    en += self.count_words(i)
+            if os.path.splitext(file)[-1] == '.pkl':
+                src, tgt = self.read_pickle(file)
+                for i in [src, tgt]:
+                    if self.is_korean(i):
+                        ko += self.count_words(i)
+                    else:
+                        en += self.count_words(i)
         return en / ko
 
     def _learn_tokenizer(self, file_path, **kwargs):
-        self.language_ratio(file_path)
-        super()._learn_tokenizer(file_path, **kwargs)
+        full_path = os.path.join(self.directory_path, file_path)
+        ratio = self.language_ratio(full_path)
+        new_kwargs = dict(kwargs, ratio=ratio)
+        super()._learn_tokenizer(file_path, **new_kwargs)
 
 
 
