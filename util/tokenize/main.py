@@ -30,12 +30,15 @@ def main():
     morphs_analyzer_class = MORPHS_ANALYZER_MAP[args.morph_analyzer_type]
     tokenizer_class = TOKENIZER_MAP[args.tokenizer_type]
     data_class = DATA_MAP[args.data_type]
+    tokens_to_add = None
     if args.multitask:
         reformatter = MultitaskReformatter(args.directory_path)
         reformatter.start()
+        tokens_to_add = reformatter.tokens_to_add
     prefix = f'{args.tokenizer_type}_{args.vocab_size}'
     indexer = data_class(args.directory_path, prefix, vocab_size=args.vocab_size,
                          tokenizer_class=tokenizer_class, morph_analyzer_class=morphs_analyzer_class,
+                         tokens_to_add = tokens_to_add,
                          jamo=args.split_jamo)
     print(f' directory path: {args.directory_path}')
     indexer.corpus_encode('.')

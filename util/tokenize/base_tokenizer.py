@@ -8,6 +8,7 @@ import collections
 import json
 from tokenizers import Tokenizer
 from tokenizers.models import *
+import shutil
 
 
 class BaseTokenizer(ABC):
@@ -78,13 +79,17 @@ class BaseTokenizer(ABC):
         for index, inp in enumerate(fl):
             if input_isdir:
                 dir_name = os.path.dirname(inp)
-                basename = os.path.splitext(os.path.basename(inp))[0]
+                basename = os.path.basename(inp)
+                if '.' not in basename:
+                    basename = os.path.splitext(basename)[0]
                 out = os.path.join(dir_name + '_encoded', basename + '.pkl')
+            else:
+                out = os.path.join(self.directory_path, os.path.splitext(inp_path)[0] + '_encoded.pkl')
+            df = self._encode_file(inp, out)
+            if df is not None:
                 if not os.path.exists(os.path.dirname(out)):
                     os.makedirs(os.path.dirname(out))
-            else:
-                out = os.path.join(self.directory_path, os.path.splitext(inp_path)[0] + 'encoded.pkl')
-            self._encode_file(inp, out)
+                df.to_pickle(out)
 
         # for index, inp in enumerate(fl):
         #     if input_isdir:
@@ -99,8 +104,8 @@ class BaseTokenizer(ABC):
         # for proc in procs:
         #     proc.join()
         if self.imap is not None:
-            self.imap.learn_dic(out_dir)
-            self.imap.convert_corpus(out_dir)
+            self.imap.learn_dic(inp_path)
+            self.imap.convert_corpus(inp_path)
 
 
 class SpaceTokenizer(BaseTokenizer, ABC):
@@ -258,6 +263,9 @@ class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
         if self.tokens_to_add:
             tokenizer.add_special_tokens(self.tokens_to_add)
         print('finished encoder learning')
+        #  remove cached files
+        shutil.rmtree(out_path)
+        os.remove(os.path.join(os.path.dirname(out_path),'merged.txt'))
         return tokenizer
 
     def _save_tokenizer(self, tokenizer):

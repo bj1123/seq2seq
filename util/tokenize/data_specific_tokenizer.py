@@ -21,8 +21,12 @@ class WikiLargeTokenizer(HFTokenizer):
     def __init__(self, directory_path, prefix, vocab_size, tokenizer_class=tokenizers.BertWordPieceTokenizer,
                  morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser,
                  use_imap=True, split_jamo=False, **kwargs):
-        super(WikiLargeTokenizer, self).__init__(directory_path, prefix, vocab_size, tokenizer_class,
-                                                 morph_analyzer_class, cleanser_class, use_imap, split_jamo,
+        super(WikiLargeTokenizer, self).__init__(directory_path, prefix, vocab_size,
+                                                 tokenizer_class=tokenizer_class,
+                                                 morph_analyzer_class=morph_analyzer_class,
+                                                 cleanser_class=cleanser_class,
+                                                 use_imap=use_imap,
+                                                 split_jamo=split_jamo,
                                                  **kwargs)
 
     def _read_file(self, file_path, **kwargs):
@@ -35,16 +39,21 @@ class WikiLargeTokenizer(HFTokenizer):
         res = self._read_file(inp, **kwargs)
         encoded = [self.tokenizer.encode(i.rstrip()).ids for i in res]
         df = pd.DataFrame({'texts': encoded})
-        df.to_pickle(out)
+        return df
 
 
 class XLSXMultiTaskTokenizer(HFTokenizer):
     def __init__(self, directory_path, prefix, vocab_size, tokenizer_class=tokenizers.BertWordPieceTokenizer,
-                 morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser,
+                 morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser, tokens_to_add=None,
                  use_imap=True, split_jamo=False, **kwargs):
-        super(XLSXMultiTaskTokenizer, self).__init__(directory_path, prefix, vocab_size, tokenizer_class,
-                                               morph_analyzer_class, cleanser_class, use_imap, split_jamo,
-                                               **kwargs)
+        super(XLSXMultiTaskTokenizer, self).__init__(directory_path, prefix, vocab_size,
+                                                     tokenizer_class=tokenizer_class,
+                                                     morph_analyzer_class=morph_analyzer_class,
+                                                     cleanser_class=cleanser_class,
+                                                     tokens_to_add=tokens_to_add,
+                                                     use_imap=use_imap,
+                                                     split_jamo=split_jamo,
+                                                     **kwargs)
 
     @staticmethod
     def read_pickle(file_path):
@@ -88,7 +97,7 @@ class XLSXMultiTaskTokenizer(HFTokenizer):
             src_encoded = [self.tokenizer.encode(i.rstrip()).ids for i in src]
             tgt_encoded = [self.tokenizer.encode(i.rstrip()).ids for i in tgt]
             df = pd.DataFrame({'src': src_encoded, 'tgt': tgt_encoded})
-            df.to_pickle(out)
+            return df
 
     def language_ratio(self, file_path):
         ko = 0
@@ -108,7 +117,8 @@ class XLSXMultiTaskTokenizer(HFTokenizer):
         full_path = os.path.join(self.directory_path, file_path)
         ratio = self.language_ratio(full_path)
         new_kwargs = dict(kwargs, ratio=ratio)
-        super()._learn_tokenizer(file_path, **new_kwargs)
+        enc = super()._learn_tokenizer(file_path, **new_kwargs)
+        return enc
 
 
 

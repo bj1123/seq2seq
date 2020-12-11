@@ -212,13 +212,11 @@ class Sampler:
             for _ in range(max_len):
                 cnt += 1
                 out = self.model(inp)
-                no_eos = cnt <= 3
+                no_eos = cnt <= 5
                 if cnt == 1:
                     probs, inp = self._beam_start(out, inp)
                 else:
                     probs, inp = self._beam_continue(out, probs, inp, no_eos)
-
-
         res = self._beam_finalize(probs, inp)
         return res
 

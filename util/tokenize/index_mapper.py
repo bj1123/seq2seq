@@ -30,13 +30,6 @@ class IMap:
         return probs_path, dic_path
 
     @staticmethod
-    def _get_files(path):
-        if os.path.isfile(path):
-            return [path]
-        elif os.path.isdir(path):
-            return get_files(path)
-
-    @staticmethod
     def get_columns(df_path):
         if isinstance(df_path,list):
             df_path = df_path[0]
@@ -48,11 +41,28 @@ class IMap:
                 tar.add(i)
         return tar
 
+    @staticmethod
+    def _get_files(path, filter_train=False):
+        if os.path.isfile(path):
+            res = os.path.join(os.path.splitext(path)[0] + '_encoded.pkl')
+            return [res]
+        elif os.path.isdir(path):
+            if sum([os.path.isdir(os.path.join(path,i)) for i in os.listdir(path)]) ==0:  # if path is last directory
+                path = path + '_encoded'
+            # check whether the files are split into test, val set
+            temp = get_files(path)
+            temp = list(filter(lambda x: os.path.dirname(x).endswith('encoded'), temp))
+            trains = list(filter(lambda x: 'train' in os.path.basename(x), temp))
+            if filter_train and trains:
+                return trains
+            else:
+                return temp
+
     def _count(self, path):
         vocab_size = self.vocab_size
         cnter = collections.Counter()
         s = set()
-        fl = self._get_files(path)
+        fl = self._get_files(path, filter_train=True)
         checks = self.get_columns(fl[0])
         if not self.target_names:
             self.target_names = checks
@@ -108,26 +118,26 @@ class IMap:
                     new.append(converted)
                 cur_df[target] = new
             return cur_df
+
         if not self.dic:
             self.learn_dic(filepath)
-
         if not self.target_names:
             self.target_names = self.get_columns(self._get_files(filepath))
         targets = self.target_names
+
+        fl = self._get_files(filepath)
         if os.path.isdir(filepath):
-            fl = get_files(filepath)
-            base_foldername = os.path.basename(filepath)
-            dirname = os.path.dirname(filepath)
             for filename in fl:
                 base_filename = os.path.basename(filename)
+                dirname = os.path.dirname(filename)
                 cur_df = _convert_file(filename, self.dic)
-                new_filename = os.path.join(dirname, base_foldername+'_mapped', base_filename)
+                new_filename = os.path.join(dirname + '_mapped', base_filename)
                 if not os.path.exists(os.path.dirname(new_filename)):
                     os.makedirs(os.path.dirname(new_filename))
                 cur_df.to_pickle(new_filename)
         else:
-            cur_df = _convert_file(filepath, self.dic)
-            new_path = os.path.splitext(filepath)[0] + '_mapped.pkl'
+            cur_df = _convert_file(fl[0], self.dic)
+            new_path = os.path.splitext(fl[0])[0] + '_mapped.pkl'
             cur_df.to_pickle(new_path)
 
     def convert_line(self, line):

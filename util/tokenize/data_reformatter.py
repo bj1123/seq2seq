@@ -87,10 +87,12 @@ class AIHubReformatter:
 
 class MultitaskReformatter:
     reformatter_map = {'aihub_mt':AIHubReformatter, 'simplification':DSReformatter}
+    tasks_map = {'aihub_mt': '<TRANSLATION>', 'simplification': '<SIMPLIFICATION>'}
 
     def __init__(self, dir_path):
         self.dir_path = dir_path
         self.tasks = os.listdir(dir_path)  # assume it only includes folder
+        self.tokens_to_add = [self.tasks_map[i] for i in self.tasks if i in self.tasks_map] + ['<KOREAN>', '<ENGLISH>']
         self.formatter_classes = {i:self.reformatter_map[i] for i in self.tasks if i in self.reformatter_map}
 
     def start(self, **kwargs):
@@ -98,6 +100,7 @@ class MultitaskReformatter:
             path = os.path.join(self.dir_path,folder)
             formatter = formatter_class(path, **kwargs)
             formatter.start()
+
 
 
 

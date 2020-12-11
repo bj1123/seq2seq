@@ -23,10 +23,10 @@ def get_model(args):
 
 
 def get_batchfier(args):
-    test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, args.batch_size * 8, args.seq_len,
+    test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, args.batch_size, args.seq_len,
                                  padding_index=args.padding_index, epoch_shuffle=False,
                                  device=args.device, sampling_mode=True)
-    return DataLoader(test_batchfier, args.batch_size * 8, collate_fn=test_batchfier.collate_fn)
+    return DataLoader(test_batchfier, args.batch_size, collate_fn=test_batchfier.collate_fn)
 
 
 def get_sampler(args, model, batchfier):
