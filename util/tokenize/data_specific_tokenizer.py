@@ -42,11 +42,11 @@ class WikiLargeTokenizer(HFTokenizer):
         return df
 
 
-class XLSXMultiTaskTokenizer(HFTokenizer):
-    def __init__(self, directory_path, prefix, vocab_size, tokenizer_class=tokenizers.BertWordPieceTokenizer,
+class MultiTaskTokenizer(HFTokenizer):
+    def __init__(self, directory_path, prefix, vocab_size, tokenizer_class='bpe',
                  morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser, tokens_to_add=None,
                  use_imap=True, split_jamo=False, **kwargs):
-        super(XLSXMultiTaskTokenizer, self).__init__(directory_path, prefix, vocab_size,
+        super(MultiTaskTokenizer, self).__init__(directory_path, prefix, vocab_size,
                                                      tokenizer_class=tokenizer_class,
                                                      morph_analyzer_class=morph_analyzer_class,
                                                      cleanser_class=cleanser_class,

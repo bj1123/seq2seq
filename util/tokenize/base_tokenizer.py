@@ -80,7 +80,7 @@ class BaseTokenizer(ABC):
             if input_isdir:
                 dir_name = os.path.dirname(inp)
                 basename = os.path.basename(inp)
-                if '.' not in basename:
+                if '.pkl' in basename:
                     basename = os.path.splitext(basename)[0]
                 out = os.path.join(dir_name + '_encoded', basename + '.pkl')
             else:
@@ -171,11 +171,15 @@ class SpaceTokenizer(BaseTokenizer, ABC):
 
 
 class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
-    def __init__(self, dir_path, prefix, vocab_size=10000, tokenizer_class=tokenizers.BertWordPieceTokenizer,
+    tokenizer_map = {'bpe':tokenizers.models.BPE, 'wp':tokenizers.models.WordPiece}
+    trainer_map = {'bpe':tokenizers.trainers.BpeTrainer, 'wp':tokenizers.trainers.WordPieceTrainer}
+    decoder_map = {'bpe':tokenizers.decoders.BPEDecoder, 'wp':tokenizers.decoders.WordPiece}
+    default_special_tokens = ['[UNK]', '[SOS]', '[EOS]']
+    def __init__(self, dir_path, prefix, vocab_size=10000, tokenizer_class='bpe',
                  morph_analyzer_class=MecabAnalyzer, cleanser_class=NullCleanser, tokens_to_add=None,
                  use_imap=True, split_jamo=False, **kwargs):
         if split_jamo:
-            assert tokenizer_class == tokenizers.BertWordPieceTokenizer, \
+            assert tokenizer_class.lower() == 'wp', \
                 'Ja-mo level tokenization is only compatible with BertWordPieceTokenizer'
             self.space_symbol = '쀍'
         else:
@@ -184,27 +188,50 @@ class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
         self.cleanser = cleanser_class()
         self.imap = IMap(dir_path, prefix, vocab_size, tokens_to_add) if use_imap else None
         self.split_jamo = split_jamo
-        self.tokenizer_class = tokenizer_class
+        self.tokenizer_class = tokenizer_class.lower()
         self.tokens_to_add = tokens_to_add
         super(HFTokenizer, self).__init__(dir_path, prefix, vocab_size, use_imap, **kwargs)
+
+    def token_to_id(self, token):
+        id = self.tokenizer.token_to_id(token)
+        if self.imap:
+            id = self.imap.dic[str(id)]
+        return id
+
+    def _initialize_tokenizer(self):
+        tokenizer = tokenizers.Tokenizer(self.tokenizer_map[self.tokenizer_class]())
+        tokenizer.pre_tokenizer = tokenizers.pre_tokenizers.Whitespace() # Todo: mecab support
+        tokenizer.post_processor = tokenizers.processors.TemplateProcessing(
+            single="[SOS] $A [EOS]",
+            pair="[SOS] $A [EOS] $B:1 [SOS]:1",
+            special_tokens=[
+                ("[SOS]", self.default_special_tokens.index('[SOS]')),
+                ("[EOS]", self.default_special_tokens.index('[EOS]')),
+            ],
+        )
+        tokenizer.decoder = self.decoder_map[self.tokenizer_class]()
+        return tokenizer
 
     def _load_tokenizer(self, directory_path, encoder_filename):
         def check_existence(inp):
             res = [os.path.exists(i) for i in inp]
             return sum(res) == len(res)
 
-        tokenizer_class = self.tokenizer_class
+        tokenizer = self._initialize_tokenizer()
+        is_exists = False
         base_name = os.path.join(directory_path, encoder_filename)
-        if tokenizer_class == tokenizers.BertWordPieceTokenizer:
+        print(base_name)
+        if self.tokenizer_class == 'wp':
             inp = (base_name + '-vocab.txt',)
-        else:
+        elif self.tokenizer_class == 'bpe':
             inp = (base_name + '-vocab.json', base_name + '-merges.txt')
+        else:
+            raise NotImplementedError
         if check_existence(inp):
             print('trained encoder loaded')
-            return tokenizer_class(*inp, lowercase=False), True
-        else:
-            print('encoder needs to be trained')
-            return tokenizer_class(lowercase=False), False
+            is_exists = True
+            tokenizer.model = self.tokenizer_map[self.tokenizer_class].from_file(*inp, unk_token='[UNK]')
+        return tokenizer, is_exists
 
     def _write_to_txt(self, inp_path, out_path, **kwargs):
         def write_one(inp, out):
@@ -258,10 +285,12 @@ class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
         tokenizer = self.tokenizer
         merge_texts(out_path)
         base_name = os.path.dirname(out_path)
-        tokenizer.train(os.path.join(base_name, 'merged.txt'), vocab_size=self.vocab_size)
         self.istrained = True
+        special_tokens = self.default_special_tokens
         if self.tokens_to_add:
-            tokenizer.add_special_tokens(self.tokens_to_add)
+            special_tokens += self.tokens_to_add
+        trainer = self.trainer_map[self.tokenizer_class](vocab_size=self.vocab_size, special_tokens=special_tokens)
+        tokenizer.train(trainer, [os.path.join(base_name, 'merged.txt')])
         print('finished encoder learning')
         #  remove cached files
         shutil.rmtree(out_path)
@@ -269,7 +298,7 @@ class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
         return tokenizer
 
     def _save_tokenizer(self, tokenizer):
-        tokenizer.save_model(self.directory_path, self.encoder_filename)
+        tokenizer.model.save(self.directory_path, self.encoder_filename)
 
     def encode(self, text):
         if self.split_jamo:

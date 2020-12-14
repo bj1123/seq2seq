@@ -116,3 +116,72 @@ class MTBatchfier(BaseBatchfier):
                 'tgt': tgt_texts.to(self.device),
                 'tgt_len': tgt_lens.to(self.device),
                 'label': tgt_texts[:, 1:].to(self.device)}
+
+
+class MultitaskBatchfier(BaseBatchfier):
+    def __init__(self, df_paths, task_indice, language_indice,
+                 batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 4096,
+                 criteria: str = 'tgt_lens', padding_index=30000, epoch_shuffle=True,
+                 sampling_mode=False, device='cuda'):
+        from util.tokenize.data_reformatter import MultitaskReformatter
+        super(MultitaskBatchfier, self).__init__(batch_size, seq_len, minlen, maxlen, criteria, padding_index,
+                                          epoch_shuffle, device)
+        self.df_paths = df_paths
+        self.tokenizer = tokenizer
+        self.dfs, self.tot_len, self.eos_idx = self.initialize()
+        self.task_indice = task_indice
+        self.language_indice = language_indice
+        self.sampling_mode = sampling_mode
+
+    @staticmethod
+    def read_df(df_path):
+        df = pd.read_pickle(df_path)
+        src_len = [len(i) for i in df.src]
+        tgt_len = [len(i) for i in df.tgt]
+        return pd.DataFrame({'src_texts': df.src, 'src_lens': src_len,
+                             'tgt_texts': df.tgt, 'tgt_lens': tgt_len})
+
+    def initialize(self):
+        l = 0
+        dfs = {}
+        for task, df_path in self.df_paths.items():
+            df = self.read_df(df_path)
+            dfs[task] = df
+            l = max(l,len(df))
+        eos = df.tgt_texts[0][-1]
+        return dfs, l*len(dfs), eos
+
+    def __len__(self):
+        return self.tot_len
+
+    def __iter__(self):
+        dfs = self.dfs
+        indice = {}
+        for i in dfs:
+            if self.epoch_shuffle:
+                dfs[i] = self.sort(dfs[i])
+            indice[i] = self.batch_indice(dfs[i])
+        for l in indice:
+            cur_batch = df.iloc[l:l+self.size]
+            src_texts = cur_batch['src_texts'].tolist()
+            src_lens = cur_batch['src_lens'].tolist()
+            tgt_texts = cur_batch['tgt_texts'].tolist()
+            tgt_lens = cur_batch['tgt_lens'].tolist()
+            for i in range(len(src_texts)):
+                if self.sampling_mode:
+                    yield src_texts[i], src_lens[i], tgt_texts[i][:1], 1
+                else:
+                    yield src_texts[i], src_lens[i], tgt_texts[i], tgt_lens[i]
+
+    def collate_fn(self, batch):
+        src_texts = [torch.Tensor(item[0]).long() for item in batch]
+        src_texts = torch.nn.utils.rnn.pad_sequence(src_texts, batch_first=True, padding_value=self.padding_index)
+        tgt_texts = [torch.Tensor(item[2]).long() for item in batch]
+        tgt_texts = torch.nn.utils.rnn.pad_sequence(tgt_texts, batch_first=True, padding_value=self.padding_index)
+        src_lens = torch.Tensor([item[1] for item in batch]).long()
+        tgt_lens = torch.Tensor([item[3] for item in batch]).long()
+        return {'src': src_texts.to(self.device),
+                'src_len': src_lens.to(self.device),
+                'tgt': tgt_texts.to(self.device),
+                'tgt_len': tgt_lens.to(self.device),
+                'label': tgt_texts[:, 1:].to(self.device)}

@@ -3,12 +3,12 @@ from util.tokenize.base_tokenizer import *
 from util.tokenize.data_reformatter import *
 
 MORPHS_ANALYZER_MAP = {'mecab': MecabAnalyzer, 'none': NullAnalyzer}
-TOKENIZER_MAP = {'sentencepiecebpe': tokenizers.SentencePieceBPETokenizer,
-                 'SP': tokenizers.SentencePieceBPETokenizer,
-                 'wordpiece': tokenizers.BertWordPieceTokenizer,
-                 'WP': tokenizers.BertWordPieceTokenizer,
+TOKENIZER_MAP = {'sentencepiecebpe': 'bpe',
+                 'SP': 'bpe',
+                 'wordpiece': 'wp',
+                 'WP': 'wp',
                  }
-DATA_MAP = {'mtspace': MTSpaceTokenizer, 'multitask': XLSXMultiTaskTokenizer}
+DATA_MAP = {'mtspace': MTSpaceTokenizer, 'multitask': MultiTaskTokenizer}
 
 
 def get_parser():

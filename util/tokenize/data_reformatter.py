@@ -53,6 +53,12 @@ class AIHubReformatter:
         if is_processed(self.dir_path):
             return
         fn = get_files(self.dir_path)
+        train_name = os.path.join(self.dir_path, 'train.pkl')
+        test_name = os.path.join(self.dir_path, 'test.pkl')
+        valid_name = os.path.join(self.dir_path, 'valid.pkl')
+        train_df = None
+        test_df = None
+        valid_df = None
         for i in fn:
             filename, ext = os.path.splitext(i)
             dn, bn = os.path.dirname(i), os.path.basename(i)
@@ -65,20 +71,30 @@ class AIHubReformatter:
             ti, vi = self.get_indice(len(res))
 
             # train
-            train_name = filename + '_train.pkl'
             tr_df = pd.DataFrame({'src': src[:ti], 'tgt': tgt[:ti]})
-            tr_df.to_pickle(train_name)
+            if train_df is None:
+                train_df = tr_df
+            else:
+                train_df = train_df.append(tr_df).reset_index(drop=True)
 
             # valid
-            test_name = filename + '_test.pkl'
             tr_df = pd.DataFrame({'src': src[ti:vi], 'tgt': tgt[ti:vi]})
-            tr_df.to_pickle(test_name)
+            if valid_df is None:
+                valid_df = tr_df
+            else:
+                valid_df = valid_df.append(tr_df).reset_index(drop=True)
 
             # test
-            valid_name = filename + '_valid.pkl'
             tr_df = pd.DataFrame({'src': src[vi:], 'tgt': tgt[vi:]})
-            tr_df.to_pickle(valid_name)
+            if test_df is None:
+                test_df = tr_df
+            else:
+                test_df = test_df.append(tr_df).reset_index(drop=True)
             shutil.move(i, os.path.join(dn,'raw',bn))
+
+        train_df.to_pickle(train_name)
+        test_df.to_pickle(test_name)
+        valid_df.to_pickle(valid_name)
 
     def get_indice(self, data_size):
         train_idx, valid_idx = int(data_size * self.ratios[0]),  int(data_size * (self.ratios[0] + self.ratios[1]))
@@ -87,7 +103,7 @@ class AIHubReformatter:
 
 class MultitaskReformatter:
     reformatter_map = {'aihub_mt':AIHubReformatter, 'simplification':DSReformatter}
-    tasks_map = {'aihub_mt': '<TRANSLATION>', 'simplification': '<SIMPLIFICATION>'}
+    tasks_map = {'aihub_mt': '[TRANSLATION]', 'simplification': '[SIMPLIFICATION]'}
 
     def __init__(self, dir_path):
         self.dir_path = dir_path
