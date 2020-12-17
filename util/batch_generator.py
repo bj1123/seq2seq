@@ -119,59 +119,87 @@ class MTBatchfier(BaseBatchfier):
 
 
 class MultitaskBatchfier(BaseBatchfier):
-    def __init__(self, df_paths, task_indice, language_indice,
+    def __init__(self, df_paths, special_token_indice,
                  batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 4096,
                  criteria: str = 'tgt_lens', padding_index=30000, epoch_shuffle=True,
                  sampling_mode=False, device='cuda'):
-        from util.tokenize.data_reformatter import MultitaskReformatter
         super(MultitaskBatchfier, self).__init__(batch_size, seq_len, minlen, maxlen, criteria, padding_index,
                                           epoch_shuffle, device)
         self.df_paths = df_paths
-        self.tokenizer = tokenizer
+        self.special_token_indice = special_token_indice
         self.dfs, self.tot_len, self.eos_idx = self.initialize()
-        self.task_indice = task_indice
-        self.language_indice = language_indice
         self.sampling_mode = sampling_mode
 
     @staticmethod
-    def read_df(df_path):
+    def cat_dfs(dfs):
+        maxl = max([len(i) for i in dfs])
+        new_dfs = []
+        for ind, i in enumerate(dfs):
+            l = len(i)
+            i = i.sample(frac=1.0).reset_index(drop=True)
+            ratio = maxl / l
+            to_duplicate = ratio
+            if to_duplicate > 1:
+                dup_ind = int(l * (to_duplicate - int(to_duplicate)))
+                i = pd.concat([i] * int(to_duplicate) + [i[:dup_ind]]).reset_index(drop=True)
+            new_dfs.append(i)
+        return pd.concat(new_dfs).reset_index(drop=True)
+
+    def read_df(self, task, df_path):
         df = pd.read_pickle(df_path)
-        src_len = [len(i) for i in df.src]
-        tgt_len = [len(i) for i in df.tgt]
-        return pd.DataFrame({'src_texts': df.src, 'src_lens': src_len,
-                             'tgt_texts': df.tgt, 'tgt_lens': tgt_len})
+        src_len = [len(i) + 2 for i in df.src]
+        tgt_len = [len(i) + 2 for i in df.tgt]
+
+        if 'TRANSLATION' in task:
+            src_language = self.special_token_indice['[KOREAN]']
+            tgt_language = self.special_token_indice['[ENGLISH]']
+        elif 'SIMPLIFICATION' in task:
+            src_language = self.special_token_indice['[ENGLISH]']
+            tgt_language = self.special_token_indice['[ENGLISH]']
+        else:
+            raise NotImplementedError
+        src_texts = [[src_language, self.special_token_indice[task]] + i for i in df.src]
+        tgt_texts = [[tgt_language, self.special_token_indice[task]] + i for i in df.tgt]
+
+        task_indice = [self.special_token_indice[task] for _ in range(len(df))]
+        dfs = list()
+        dfs.append(pd.DataFrame({'src_texts': src_texts, 'src_lens': src_len,
+                                 'tgt_texts': tgt_texts, 'tgt_lens': tgt_len, 'tasks': task_indice}))
+        if 'TRANSLATION' in task:
+            dfs.append(pd.DataFrame({'src_texts': tgt_texts, 'src_lens': tgt_len,
+                                     'tgt_texts': src_texts, 'tgt_lens': src_len, 'tasks': task_indice}))
+        return dfs
 
     def initialize(self):
-        l = 0
-        dfs = {}
+        dfs = []
         for task, df_path in self.df_paths.items():
-            df = self.read_df(df_path)
-            dfs[task] = df
-            l = max(l,len(df))
-        eos = df.tgt_texts[0][-1]
-        return dfs, l*len(dfs), eos
+            for path in df_path:
+                df = self.read_df(task, path)
+                dfs.extend(df)
+        eos = dfs[0].tgt_texts[0][-1]
+        ml = max([len(i) for i in dfs]) * len(dfs)
+        return dfs, ml, eos
 
     def __len__(self):
         return self.tot_len
 
     def __iter__(self):
-        dfs = self.dfs
-        indice = {}
-        for i in dfs:
-            if self.epoch_shuffle:
-                dfs[i] = self.sort(dfs[i])
-            indice[i] = self.batch_indice(dfs[i])
+        df = self.cat_dfs(self.dfs)
+        if self.epoch_shuffle:
+            df = self.sort(df)
+        indice = self.batch_indice(df)
         for l in indice:
             cur_batch = df.iloc[l:l+self.size]
+            tasks = cur_batch['tasks'].tolist()
             src_texts = cur_batch['src_texts'].tolist()
             src_lens = cur_batch['src_lens'].tolist()
             tgt_texts = cur_batch['tgt_texts'].tolist()
             tgt_lens = cur_batch['tgt_lens'].tolist()
             for i in range(len(src_texts)):
                 if self.sampling_mode:
-                    yield src_texts[i], src_lens[i], tgt_texts[i][:1], 1
+                    yield src_texts[i], src_lens[i], tgt_texts[i][:1], 1, tasks[i]
                 else:
-                    yield src_texts[i], src_lens[i], tgt_texts[i], tgt_lens[i]
+                    yield src_texts[i], src_lens[i], tgt_texts[i], tgt_lens[i], tasks[i]
 
     def collate_fn(self, batch):
         src_texts = [torch.Tensor(item[0]).long() for item in batch]
@@ -180,8 +208,53 @@ class MultitaskBatchfier(BaseBatchfier):
         tgt_texts = torch.nn.utils.rnn.pad_sequence(tgt_texts, batch_first=True, padding_value=self.padding_index)
         src_lens = torch.Tensor([item[1] for item in batch]).long()
         tgt_lens = torch.Tensor([item[3] for item in batch]).long()
+        tasks = torch.Tensor([item[4] for item in batch]).long()
         return {'src': src_texts.to(self.device),
                 'src_len': src_lens.to(self.device),
                 'tgt': tgt_texts.to(self.device),
                 'tgt_len': tgt_lens.to(self.device),
-                'label': tgt_texts[:, 1:].to(self.device)}
+                'label': tgt_texts[:, 1:].to(self.device),
+                'tasks': tasks.to(self.device)}
+
+
+class MultitaskInferBatchfier(BaseBatchfier): # batchfy from raw text
+    def __init__(self, file_path, tokenizer, batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 4096,
+                 padding_index=30000, device='cuda' ):
+        super(MultitaskInferBatchfier, self).__init__(batch_size, seq_len, minlen, maxlen,
+                                                      None, padding_index, False, device)
+        self.filepath = file_path
+        self.tokenizer = tokenizer
+        self.texts = self.initialize()
+        self.eos_idx = tokenizer.token_to_id('[EOS]')
+
+    def initialize(self):
+        with open(self.filepath) as f:
+            lines = f.readlines()
+        return [self.tokenizer.encode(i) for i in lines]
+
+    def __len__(self):
+        return len(self.texts)
+
+    def __iter__(self):
+        texts = self.texts
+        tokenizer = self.tokenizer
+        for text in texts:
+            prefix = [tokenizer.token_to_id('[KOREAN]'), tokenizer.token_to_id('[SIMPLIFICATION]')]
+            temp = [tokenizer.token_to_id('[KOREAN]'), tokenizer.token_to_id('[SIMPLIFICATION]')]
+            yield prefix + text, len(text) + 2, temp + [tokenizer.token_to_id('[SOS]')], 3,\
+                  tokenizer.token_to_id('[TRANSLATION]')
+
+    def collate_fn(self, batch):
+        src_texts = [torch.Tensor(item[0]).long() for item in batch]
+        src_texts = torch.nn.utils.rnn.pad_sequence(src_texts, batch_first=True, padding_value=self.padding_index)
+        tgt_texts = [torch.Tensor(item[2]).long() for item in batch]
+        tgt_texts = torch.nn.utils.rnn.pad_sequence(tgt_texts, batch_first=True, padding_value=self.padding_index)
+        src_lens = torch.Tensor([item[1] for item in batch]).long()
+        tgt_lens = torch.Tensor([item[3] for item in batch]).long()
+        tasks = torch.Tensor([item[4] for item in batch]).long()
+        return {'src': src_texts.to(self.device),
+                'src_len': src_lens.to(self.device),
+                'tgt': tgt_texts.to(self.device),
+                'tgt_len': tgt_lens.to(self.device),
+                'label': tgt_texts[:, 1:].to(self.device),
+                'tasks': tasks.to(self.device)}

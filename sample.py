@@ -3,7 +3,7 @@ from util.batch_generator import *
 import json
 from util.sampler import Sampler
 import os
-from util.args import SamplingArgument
+from util.args import get_args
 from util.losses import *
 import apex
 from torch.utils.data.dataloader import DataLoader
@@ -41,7 +41,7 @@ def get_sampler(args, model, batchfier):
 
 
 if __name__ == '__main__':
-    args = SamplingArgument()
+    args = get_args()
     # print(args.__dict__)
     model = get_model(args)
     batchfier = get_batchfier(args)

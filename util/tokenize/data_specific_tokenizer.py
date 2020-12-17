@@ -43,7 +43,7 @@ class WikiLargeTokenizer(HFTokenizer):
 
 
 class MultiTaskTokenizer(HFTokenizer):
-    def __init__(self, directory_path, prefix, vocab_size, tokenizer_class='bpe',
+    def __init__(self, directory_path, prefix, vocab_size=10000, tokenizer_class='wp',
                  morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser, tokens_to_add=None,
                  use_imap=True, split_jamo=False, **kwargs):
         super(MultiTaskTokenizer, self).__init__(directory_path, prefix, vocab_size,

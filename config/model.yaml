@@ -9,6 +9,7 @@ base:
   n_dec_layers: 6
   dropout_rate: 0.1
   dropatt_rate: 0.0
+  pre_lnorm: False
 
 large:
   batch_seqlen: 1024
@@ -22,4 +23,5 @@ large:
   n_layers: 18
   dropout_rate: 0.1
   dropatt_rate: 0.0
+  pre_lnorm: False
 

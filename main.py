@@ -4,7 +4,7 @@ from util.files import *
 from util.initializer import *
 from util.trainer import Trainer
 import os
-from util.args import MTArgument
+from util.args import *
 from util.losses import *
 import apex
 from util.lr_scheduler import *
@@ -27,10 +27,18 @@ def get_model(args):
 
 
 def get_batchfier(args):
-    train_batchfier = MTBatchfier(args.train_src_path, args.train_tgt_path, args.batch_size, args.seq_len,
-                                  padding_index=args.padding_index, device=args.device)
-    test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, args.batch_size, args.seq_len,
-                                 padding_index=args.padding_index, device=args.device)
+    if args.mode =='seq2seq':
+        train_batchfier = MTBatchfier(args.train_src_path, args.train_tgt_path, args.batch_size, args.seq_len,
+                                      padding_index=args.padding_index, device=args.device)
+        test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, args.batch_size, args.seq_len,
+                                     padding_index=args.padding_index, device=args.device)
+    elif args.mode =='multitask':
+        train_batchfier = MultitaskBatchfier(args.train_path, args.special_token_indice, args.batch_size, args.seq_len,
+                                             padding_index=args.padding_index, device=args.device)
+        test_batchfier = MultitaskBatchfier(args.test_path, args.special_token_indice, args.batch_size, args.seq_len,
+                                            padding_index=args.padding_index, device=args.device)
+    else:
+        raise NotImplementedError
     return DataLoader(train_batchfier, args.batch_size, collate_fn=train_batchfier.collate_fn), \
            DataLoader(test_batchfier, args.batch_size, collate_fn=test_batchfier.collate_fn)
 
@@ -66,7 +74,7 @@ def get_trainer(args, model, train_batchfier, test_batchfier):
 
 
 if __name__ == '__main__':
-    args = MTArgument()
+    args = get_args()
     # print(args.__dict__)
     model = get_model(args)
     train_batchfier, test_batchfier = get_batchfier(args)

@@ -109,6 +109,7 @@ class Sampler:
             s = tgt_mem[0].size()
             tgt_mem = [i[:, None].repeat(1, self.width, 1, 1).view(-1, *s[1:]) for i in out['tgt_mem']]
             inp['tgt_mem'] = tgt_mem
+            inp['tgt_len'] = torch.ones(size=(bs,), dtype=torch.long, device=logits.device)
         else:
             new_tgt = inp['tgt']
             new_tgt = torch.cat([new_tgt[:, None].repeat(1, self.width, 1), i[..., None]], 2) \
