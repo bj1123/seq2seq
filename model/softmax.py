@@ -248,6 +248,24 @@ class FactorizedSoftmaxV2(nn.Module):
         # return torch.sum(nll) / (ny-padding_size)
 
 
+class ComplexityControllingSoftmax(nn.Module):
+    def __init__(self, vocab_size:int, hidden_dim:int, cutoffs:list, padding_index:int, **kwargs):
+        super(ComplexityControllingSoftmax, self).__init__()
+        self.padding_index = padding_index
+        self.vocab_size = vocab_size
+        self.n_clusters = len(cutoffs) + 1
+        self.cutoffs = [0] + cutoffs + [vocab_size]
+        self.cluster_logit = nn.Linear(hidden_dim, self.n_clusters, bias=False)
+        self.cluster_embedding = nn.Embedding(self.n_clusters, hidden_dim)
+        self.logits = nn.Linear(hidden_dim, vocab_size, bias=False)
+
+    def forward(self, x, clusters):
+        words_logits = self.logits(x)
+        cluster_logits = self.cluster_logit(x)
+
+
+
+
 class LinearTransform(nn.Module):
     def __init__(self,hidden_states:int,activation_fn):
         super(LinearTransform, self).__init__()

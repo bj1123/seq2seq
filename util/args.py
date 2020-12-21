@@ -104,11 +104,16 @@ class MultitaskArgument(BaseArgument):
     def _get_special_tokens_indice(data):
         from util.tokenize.data_specific_tokenizer import MultiTaskTokenizer
         from util.tokenize.data_reformatter import MultitaskReformatter
-        tasks = list(MultitaskReformatter.tasks_map.values())
-        languages = MultitaskReformatter.languages
         tokenizer = MultiTaskTokenizer(data['dir_path'], data['tokenizer_prefix'],
                                        tokenizer_class=data['tokenizer_class'])
-        indice = {i: tokenizer.token_to_id(i) for i in tasks + languages}
+        tasks = list(MultitaskReformatter.tasks_map.values())
+        task_dic = {i: tokenizer.token_to_id(i) for i in tasks}
+        languages = MultitaskReformatter.languages
+        language_dic = {i: tokenizer.token_to_id(i) for i in languages}
+        symbols = MultiTaskTokenizer.default_special_tokens
+        symbol_dic = {i: tokenizer.token_to_id(i) for i in symbols}
+
+        indice = {'language':language_dic, 'task':task_dic, 'symbols':symbol_dic}
         return indice
 
     def get_args(self, is_test=False):

@@ -47,7 +47,7 @@ class IMap:
             res = os.path.join(os.path.splitext(path)[0] + '_encoded.pkl')
             return [res]
         elif os.path.isdir(path):
-            if sum([os.path.isdir(os.path.join(path,i)) for i in os.listdir(path)]) ==0:  # if path is last directory
+            if sum([os.path.isdir(os.path.join(path,i)) for i in os.listdir(path)]) != len(os.listdir(path)):  # if path is last directory
                 path = path + '_encoded'
             # check whether the files are split into test, val set
             temp = get_files(path)

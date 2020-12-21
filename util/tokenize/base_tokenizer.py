@@ -174,7 +174,7 @@ class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
     tokenizer_map = {'bpe':tokenizers.models.BPE, 'wp':tokenizers.models.WordPiece}
     trainer_map = {'bpe':tokenizers.trainers.BpeTrainer, 'wp':tokenizers.trainers.WordPieceTrainer}
     decoder_map = {'bpe':tokenizers.decoders.BPEDecoder, 'wp':tokenizers.decoders.WordPiece}
-    default_special_tokens = ['[UNK]', '[SOS]', '[EOS]']
+    default_special_tokens = ['[UNK]', '[SOS]', '[EOS]', '[MASK]']
 
     def __init__(self, dir_path, prefix, vocab_size=10000, tokenizer_class='wp',
                  morph_analyzer_class=MecabAnalyzer, cleanser_class=NullCleanser, tokens_to_add=None,

@@ -3,6 +3,7 @@ import glob
 import json
 import torch
 import pandas as pd
+import numpy as np
 
 
 def get_files(path):
@@ -59,7 +60,4 @@ def df_to_txt(inp_path, out_path):
     with open(out_path, 'w') as f:
         res = [' '.join(map(str, i[1:-1])) + ' \n' for i in df.texts]
         f.writelines(res)
-
-
-
 

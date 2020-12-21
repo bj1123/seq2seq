@@ -17,11 +17,11 @@ class MTSpaceTokenizer(SpaceTokenizer):
         df.to_pickle(out)
 
 
-class WikiLargeTokenizer(HFTokenizer):
+class HFBaseTokenizer(HFTokenizer):
     def __init__(self, directory_path, prefix, vocab_size, tokenizer_class=tokenizers.BertWordPieceTokenizer,
                  morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser,
                  use_imap=True, split_jamo=False, **kwargs):
-        super(WikiLargeTokenizer, self).__init__(directory_path, prefix, vocab_size,
+        super(HFBaseTokenizer, self).__init__(directory_path, prefix, vocab_size,
                                                  tokenizer_class=tokenizer_class,
                                                  morph_analyzer_class=morph_analyzer_class,
                                                  cleanser_class=cleanser_class,
@@ -29,20 +29,30 @@ class WikiLargeTokenizer(HFTokenizer):
                                                  split_jamo=split_jamo,
                                                  **kwargs)
 
+    @staticmethod
+    def read_pickle(file_path):
+        res = pd.read_pickle(file_path)
+        src = res['src'].tolist()
+        tgt = res['tgt'].tolist()
+        return src, tgt
+
     def _read_file(self, file_path, **kwargs):
-        with open(file_path, 'r', encoding='utf-8') as f:
-            res = f.readlines()
-            res = list(map(lambda x: x, res))
-        return res
+        if os.path.splitext(file_path)[-1] == '.pkl':
+            src, tgt = self.read_pickle(file_path)
+            return src + tgt
+        else:
+            return []
 
     def _encode_file(self, inp, out, **kwargs):
-        res = self._read_file(inp, **kwargs)
-        encoded = [self.tokenizer.encode(i.rstrip()).ids for i in res]
-        df = pd.DataFrame({'texts': encoded})
-        return df
+        if os.path.splitext(inp)[-1] == '.pkl':
+            src, tgt = self.read_pickle(inp)
+            src_encoded = [self.tokenizer.encode(i.rstrip()).ids for i in src]
+            tgt_encoded = [self.tokenizer.encode(i.rstrip()).ids for i in tgt]
+            df = pd.DataFrame({'src': src_encoded, 'tgt': tgt_encoded})
+            return df
 
 
-class MultiTaskTokenizer(HFTokenizer):
+class MultiTaskTokenizer(HFBaseTokenizer):
     def __init__(self, directory_path, prefix, vocab_size=10000, tokenizer_class='wp',
                  morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser, tokens_to_add=None,
                  use_imap=True, split_jamo=False, **kwargs):
@@ -56,21 +66,18 @@ class MultiTaskTokenizer(HFTokenizer):
                                                      **kwargs)
 
     @staticmethod
-    def read_pickle(file_path):
-        res = pd.read_pickle(file_path)
-        src = res['src'].tolist()
-        tgt = res['tgt'].tolist()
-        return src, tgt
-
-    @staticmethod
     def is_korean(texts):
         korean = re.compile('[ㄱ-ㅣ가-힣]+')
+        if not texts[0]:
+            return False
         res1 = korean.search(texts[0])
         res2 = korean.search(texts[-1])
         return not (res1 == res2)
 
     @staticmethod
     def count_words(texts):
+        if not texts[0]:
+            return 0
         return len(texts)  # criteria: n_sentences
         # return sum([len(i.split()) for i in texts])  # criteria: n_words
 
@@ -80,13 +87,14 @@ class MultiTaskTokenizer(HFTokenizer):
             res = []
             src, tgt = self.read_pickle(file_path)
             for i in [src, tgt]:
-                iskorean = self.is_korean(src)
-                if iskorean:
-                    res.extend(i * (int(ratio) - 1))
-                    remainder = int(len(src) * (ratio - int(ratio)))
-                    res.extend(i[:remainder])
-                else:
-                    res.extend(i)
+                if i[0]:
+                    iskorean = self.is_korean(src)
+                    if iskorean:
+                        res.extend(i * (int(ratio) - 1))
+                        remainder = int(len(src) * (ratio - int(ratio)))
+                        res.extend(i[:remainder])
+                    else:
+                        res.extend(i)
             return res
         else:
             return []
@@ -96,7 +104,10 @@ class MultiTaskTokenizer(HFTokenizer):
             src, tgt = self.read_pickle(inp)
             src_encoded = [self.tokenizer.encode(i.rstrip()).ids for i in src]
             tgt_encoded = [self.tokenizer.encode(i.rstrip()).ids for i in tgt]
-            df = pd.DataFrame({'src': src_encoded, 'tgt': tgt_encoded})
+            target_language = ['[KOREAN]' if self.is_korean(tgt) else '[ENGLISH]'] * len(tgt)
+            source_language = ['[KOREAN]' if self.is_korean(src) else '[ENGLISH]'] * len(tgt)
+            df = pd.DataFrame({'src': src_encoded, 'tgt': tgt_encoded, 'target_language': target_language,
+                               'source_language':source_language})
             return df
 
     def language_ratio(self, file_path):

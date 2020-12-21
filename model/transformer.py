@@ -250,3 +250,83 @@ class LMModel(nn.Module):
         out = out.contiguous().view(bs * (qs - 1), -1)
         final = self.final(out)
         return final, mem
+
+
+class CrossLingualModel(nn.Module):
+    def __init__(self, vocab_size: int, seq_len: int, hidden_dim: int, projection_dim: int, n_heads: int, head_dim: int,
+                 enc_num_layers: int, dec_num_layers: int, dropout_rate: float, dropatt_rate: float, padding_index: int,
+                 pre_lnorm: bool = False, same_lengths: bool = False, rel_att: bool = False, shared_embedding=False,
+                 tie_embedding=False, num_decoders = 2, **kwargs):
+        super(CrossLingualModel, self).__init__()
+        self.encoder = EncoderNetwork(hidden_dim, projection_dim, n_heads, head_dim, enc_num_layers, dropout_rate,
+                                      dropatt_rate, pre_lnorm, same_lengths, rel_att,
+                                      vocab_size=vocab_size, seq_len=seq_len, padding_index=padding_index)
+        self.tie_embedding = tie_embedding
+        self.num_decoders = num_decoders
+        self.hidden_dim = hidden_dim
+        if shared_embedding:
+            kwargs_dict = {'embedding': self.encoder.embedding}
+        else:
+            kwargs_dict = {'vocab_size': vocab_size, 'seq_len': seq_len, 'padding_index': padding_index}
+
+        self.decoder = nn.ModuleList([DecoderNetwork(hidden_dim, projection_dim, n_heads, head_dim,
+                                                     dec_num_layers, dropout_rate, dropatt_rate, pre_lnorm,
+                                                     same_lengths, rel_att, **kwargs_dict) for i in range(num_decoders)])
+        if self.tie_embedding:
+            raise NotImplementedError
+        else:
+            self.final = nn.ModuleList([nn.Linear(hidden_dim, vocab_size, bias=False) for i in range(num_decoders)])
+
+    def encode_src(self, inp):
+        src, src_len = inp['src'], inp['src_len']
+        src_mask = self.encoder.get_mask(None, src_len)
+        enc_out, _, enc_self_atts = self.encoder(src, None, src_mask)
+        return {'enc_out': enc_out, 'enc_self_att': enc_self_atts}
+
+    def forward(self, inp):
+        src, tgt, src_len, tgt_len, tgt_language = inp['src'], inp['tgt'], inp['src_len'],\
+                                                   inp['tgt_len'], inp['tgt_language']
+        enc_out = inp['enc_out'] if 'enc_out' in inp else None  # if src is already encoded. used in decoding phase
+        tgt_mem = inp['tgt_mem'] if 'tgt_mem' in inp else None
+        out = {}
+        if enc_out is None:
+            from_enc = self.encode_src(inp)
+            out['enc_out'] = from_enc['enc_out']
+            out['enc_self_att'] = from_enc['enc_self_att']
+            enc_out = from_enc['enc_out']
+        tgt_mask = self.decoder.get_mask(tgt_mem, tgt_len)
+        tgt_to_src_mask = self.decoder.tgt_to_src_mask(src_len, tgt_len)
+        bs, l = tgt.size()
+        z_logits = torch.zeros(size=(bs, l, self.vocab_size))
+        z_tgt_mem = [torch.zeros(size=(bs, l, self.hidden_dim*2))]
+
+        for i in range(self.num_decoders):
+            ind = (tgt_language == i).nonzero().squeeze(1)
+            i_tgt_mask = tgt_mask[ind]
+            i_tgt_to_src_mask = tgt_to_src_mask[ind]
+            i_enc_out = enc_out[ind]
+            i_tgt_mem = [k[ind] for k in tgt_mem]
+            i_dec_out, i_new_tgt_mem, dec_self_att, inter_att = self.decoder(i_enc_out, i_tgt,
+                                                                         i_tgt_mem, i_tgt_mask, i_tgt_to_src_mask)
+            i_logits = self.final(i_dec_out)
+            z_logits[ind] = i_logits
+            for j in range(len(z_tgt_mem)):
+                z_tgt_mem[j][ind] = i_new_tgt_mem[j]
+        out['logits'] = z_logits
+        out['tgt_mem'] = z_tgt_mem
+        out['dec_self_att'] = dec_self_att
+        out['inter_att'] = inter_att
+        return out
+
+
+class ComplexityAwareModel(EncoderDecoderModel):
+    def __init__(self, vocab_size: int, seq_len: int, hidden_dim: int, projection_dim: int, n_heads: int, head_dim: int,
+                 enc_num_layers: int, dec_num_layers: int, dropout_rate: float, dropatt_rate: float, padding_index: int,
+                 n_cluster:int, pre_lnorm: bool = False, same_lengths: bool = False, rel_att: bool = False,
+                 shared_embedding=False, tie_embedding=False, **kwargs):
+        super(ComplexityAwareModel, self).__init__(vocab_size, seq_len, hidden_dim, projection_dim, n_heads,
+                                                   head_dim, enc_num_layers, dec_num_layers, dropout_rate,
+                                                   dropatt_rate, padding_index, pre_lnorm, same_lengths,
+                                                   rel_att, shared_embedding, tie_embedding, ** kwargs)
+        delattr(self, 'final')
+        self.final = ComplexityControllingSoftmax(vocab_size, hidden_dim)
