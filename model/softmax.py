@@ -262,6 +262,7 @@ class ComplexityControllingSoftmax(nn.Module):
     def forward(self, x, clusters):
         words_logits = self.logits(x)
         cluster_logits = self.cluster_logit(x)
+        cluster_embeded = self.cluster_embedding(clusters)
 
 
 
