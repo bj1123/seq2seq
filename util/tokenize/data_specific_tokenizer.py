@@ -22,12 +22,12 @@ class HFBaseTokenizer(HFTokenizer):
                  morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser,
                  use_imap=True, split_jamo=False, **kwargs):
         super(HFBaseTokenizer, self).__init__(directory_path, prefix, vocab_size,
-                                                 tokenizer_class=tokenizer_class,
-                                                 morph_analyzer_class=morph_analyzer_class,
-                                                 cleanser_class=cleanser_class,
-                                                 use_imap=use_imap,
-                                                 split_jamo=split_jamo,
-                                                 **kwargs)
+                                              tokenizer_class=tokenizer_class,
+                                              morph_analyzer_class=morph_analyzer_class,
+                                              cleanser_class=cleanser_class,
+                                              use_imap=use_imap,
+                                              split_jamo=split_jamo,
+                                              **kwargs)
 
     @staticmethod
     def read_pickle(file_path):
@@ -56,14 +56,16 @@ class MultiTaskTokenizer(HFBaseTokenizer):
     def __init__(self, directory_path, prefix, vocab_size=10000, tokenizer_class='wp',
                  morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser, tokens_to_add=None,
                  use_imap=True, split_jamo=False, **kwargs):
+        from util.tokenize.data_reformatter import MultitaskReformatter
         super(MultiTaskTokenizer, self).__init__(directory_path, prefix, vocab_size,
-                                                     tokenizer_class=tokenizer_class,
-                                                     morph_analyzer_class=morph_analyzer_class,
-                                                     cleanser_class=cleanser_class,
-                                                     tokens_to_add=tokens_to_add,
-                                                     use_imap=use_imap,
-                                                     split_jamo=split_jamo,
-                                                     **kwargs)
+                                                 tokenizer_class=tokenizer_class,
+                                                 morph_analyzer_class=morph_analyzer_class,
+                                                 cleanser_class=cleanser_class,
+                                                 tokens_to_add=tokens_to_add,
+                                                 use_imap=use_imap,
+                                                 split_jamo=split_jamo,
+                                                 **kwargs)
+        self.task_map = MultitaskReformatter.tasks_map
 
     @staticmethod
     def is_korean(texts):
@@ -101,13 +103,20 @@ class MultiTaskTokenizer(HFBaseTokenizer):
 
     def _encode_file(self, inp, out, **kwargs):
         if os.path.splitext(inp)[-1] == '.pkl':
+            base_dir = os.path.basename(os.path.dirname(inp))
+            task = self.task_map[base_dir]
+            task_ind = self.tokenizer.token_to_id(task)
             src, tgt = self.read_pickle(inp)
-            src_encoded = [self.tokenizer.encode(i.rstrip()).ids for i in src]
-            tgt_encoded = [self.tokenizer.encode(i.rstrip()).ids for i in tgt]
-            target_language = ['[KOREAN]' if self.is_korean(tgt) else '[ENGLISH]'] * len(tgt)
-            source_language = ['[KOREAN]' if self.is_korean(src) else '[ENGLISH]'] * len(tgt)
+            src_lang = '[KOREAN]' if self.is_korean(src) else '[ENGLISH]'
+            src_lang_ind = self.tokenizer.token_to_id(src_lang)
+            tgt_lang = '[KOREAN]' if self.is_korean(tgt) else '[ENGLISH]'
+            tgt_lang_ind = self.tokenizer.token_to_id(tgt_lang)
+            src_encoded = [[src_lang_ind, task_ind] + self.tokenizer.encode(i.rstrip()).ids for i in src]
+            tgt_encoded = [[tgt_lang_ind, task_ind] + self.tokenizer.encode(i.rstrip()).ids for i in tgt]
+            target_language = [src_lang] * len(tgt)
+            source_language = [tgt_lang] * len(tgt)
             df = pd.DataFrame({'src': src_encoded, 'tgt': tgt_encoded, 'target_language': target_language,
-                               'source_language':source_language})
+                               'source_language': source_language})
             return df
 
     def language_ratio(self, file_path):
@@ -130,6 +139,3 @@ class MultiTaskTokenizer(HFBaseTokenizer):
         new_kwargs = dict(kwargs, ratio=ratio)
         enc = super()._learn_tokenizer(file_path, **new_kwargs)
         return enc
-
-
-

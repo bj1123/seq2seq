@@ -43,7 +43,7 @@ class PlainLoss(BaseLoss):
             y_hat = y_hat[:, :-1]
         if len(y_hat.size()) !=2:
             y_hat = y_hat.contiguous().view(-1, y_hat.size(-1))
-            y = y.view(-1)
+            y = y.contiguous().view(-1)
         y = y.contiguous()
         l = self.criteria(y_hat,y)
         self.cum_loss +=l

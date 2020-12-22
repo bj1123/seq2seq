@@ -73,7 +73,7 @@ class MTBatchfier(BaseBatchfier):
     def merge_dfs(path):
         df = pd.read_pickle(path)
         src_len = [len(i) for i in df.src]
-        tgt_len = [len(i) for i in tgt.tgt]
+        tgt_len = [len(i) for i in df.tgt]
         return pd.DataFrame({'src_texts': df.src, 'src_lens': src_len,
                              'tgt_texts': df.tgt, 'tgt_lens': tgt_len})
 
@@ -122,23 +122,30 @@ class MTBatchfier(BaseBatchfier):
 
 class MultitaskBatchfier(BaseBatchfier):
     def __init__(self, df_paths, special_token_indice,
-                 batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 4096,
+                 batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 512,
                  criteria: str = 'tgt_lens', padding_index=30000, epoch_shuffle=True,
                  sampling_mode=False, mask_ratio=0.15, device='cuda'):
         super(MultitaskBatchfier, self).__init__(batch_size, seq_len, minlen, maxlen, criteria, padding_index,
                                           epoch_shuffle, device)
         self.df_paths = df_paths
         self.special_token_indice = special_token_indice  # tokenizer indice
+        self.special_token_dic = {i: {j: idx for idx, j in enumerate(special_token_indice[i].keys())}
+                                  for i in special_token_indice}  # indice for feeding the model
+        self.mask_ratio = mask_ratio
         self.dfs, self.tot_len, self.eos_idx = self.initialize()
         self.sampling_mode = sampling_mode
-        self.mask_ratio = mask_ratio
-        self.special_token_dic = {i:{j:idx for idx, j in enumerate(x[i].keys())} for i in special_token_indice}  # indice for feeding the model
 
-    @staticmethod
-    def cat_dfs(dfs):
+    def truncate_line(self, text, length):
+        if length > self.maxlen:
+            length = self.maxlen
+            text = text[:self.maxlen]
+        return text, length
+
+    def cat_dfs(self, dfs):
+        dfs = dfs + [self.add_autoencoding_data(dfs)]
         n_tokens = [sum(i.tgt_lens.to_list()) for i in dfs]
         # maxl = max([len(i) for i in dfs])  # criteria : n_sentences
-        maxl = max(n_tokens)  #  criteria : n_tokens
+        maxl = max(n_tokens)  # criteria : n_tokens
         new_dfs = []
         for ind, i in enumerate(dfs):
             l = len(i)
@@ -154,28 +161,24 @@ class MultitaskBatchfier(BaseBatchfier):
 
     def read_df(self, task, df_path):
         df = pd.read_pickle(df_path)
-        src_len = [len(i) + 2 for i in df.src]
-        tgt_len = [len(i) + 2 for i in df.tgt]
-        st_t = self.special_token_indice
+        src_len = [len(i) for i in df.src]
+        tgt_len = [len(i) for i in df.tgt]
 
-        src_texts = [[st_t['language'][i.source_language], st_t['task'][task]]
-                     + i.src for idx, i in df.iterrows()]
-        tgt_texts = [[st_t['language'][i.target_language], st_t['task'][task]]
-                     + i.tgt for idx, i in df.iterrows()]
-
+        tgt_language_indice = self.special_token_dic['language'][df.target_language[0]]
+        src_language_indice = self.special_token_dic['language'][df.source_language[0]]
         task_indice = [self.special_token_dic['task'][task] for _ in range(len(df))]
-        tgt_language_indice = [self.special_token_dic['language'][i] for i in df.target_language]
-        src_language_indice = [self.special_token_dic['language'][i] for i in df.source_language]
+        tgt_language_indice = [tgt_language_indice] * len(df)
+        src_language_indice = [src_language_indice] * len(df)
         dfs = list()
-        dfs.append(pd.DataFrame({'src_texts': src_texts, 'src_lens': src_len,
-                                 'tgt_texts': tgt_texts, 'tgt_lens': tgt_len, 'tasks': task_indice,
+        dfs.append(pd.DataFrame({'src_texts': df.src, 'src_lens': src_len,
+                                 'tgt_texts': df.tgt, 'tgt_lens': tgt_len, 'tasks': task_indice,
                                  'src_languages':src_language_indice,
                                  'tgt_languages':tgt_language_indice}))
         if 'TRANSLATION' in task:
-            dfs.append(pd.DataFrame({'src_texts': tgt_texts, 'src_lens': tgt_len,
-                                     'tgt_texts': src_texts, 'tgt_lens': src_len, 'tasks': task_indice,
-                                     'src_languages':tgt_language_indice,
-                                     'tgt_languages':src_language_indice}))
+            dfs.append(pd.DataFrame({'src_texts': df.tgt, 'src_lens': tgt_len,
+                                     'tgt_texts': df.src, 'tgt_lens': src_len, 'tasks': task_indice,
+                                     'src_languages': tgt_language_indice,
+                                     'tgt_languages': src_language_indice}))
         return dfs
 
     def add_autoencoding_data(self, dfs):
@@ -187,27 +190,36 @@ class MultitaskBatchfier(BaseBatchfier):
 
         ndf = len(dfs)
         portion = 1 / ndf
-        samples = []
+        srcs = []
+        tgts = []
+        src_languages = []
+        src_lens = []
         for df in dfs:
             new_df = df.sample(frac=portion)
-            for row in new_df:
-                if row.src < 3:
-                    src = row.tgt
-                    src_lang = row.target_language
+            for _, row in new_df.iterrows():
+                if len(row.src_texts) < 5:
+                    src = row.tgt_texts
+                    src_len = row.tgt_lens
+                    src_lang = row.tgt_languages
                 else:
                     i = random.randint(0,1)
                     if i:
-                        src = row.tgt
-                        src_lang = row.target_language
+                        src = row.tgt_texts
+                        src_len = row.tgt_lens
+                        src_lang = row.tgt_languages
                     else:
-                        src = row.src
-                        src_lang = row.source_language
+                        src = row.src_texts
+                        src_len = row.src_lens
+                        src_lang = row.src_languages
                 tgt = mask_sentence(src, self.mask_ratio, self.special_token_indice['symbols']['[MASK]'])
-                tgt_lang = src_lang
-                samples.append(pd.Series({'src_texts':src, 'src_lens':len(src), 'tgt_texts':tgt,
-                                          'tgt_lens':len(tgt), 'tasks':self.special_token_dic['task']['[TRANSLATION]'],
-                                          'src_languages':src_lang,'tgt_languages':tgt_lang}))
-        return pd.DataFrame(samples)
+                srcs.append(src)
+                tgts.append(tgt)
+                src_lens.append(src_len)
+                src_languages.append(src_lang)
+
+        return pd.DataFrame({'src_texts': srcs, 'src_lens': src_lens, 'tgt_texts': tgts, 'tgt_lens': src_lens,
+                             'tasks': [self.special_token_dic['task']['[TRANSLATION]']]*len(tgts),
+                             'src_languages': src_languages, 'tgt_languages': src_languages})
 
     def initialize(self):
         dfs = []
@@ -216,8 +228,7 @@ class MultitaskBatchfier(BaseBatchfier):
                 df = self.read_df(task, path)
                 dfs.extend(df)
         eos = dfs[0].tgt_texts[0][-1]
-        dfs.append(self.add_autoencoding_data(dfs))
-        ml = max([len(i) for i in dfs]) * len(dfs)
+        ml = max([len(i) for i in dfs]) * (len(dfs) + 1)
         return dfs, ml, eos
 
     def __len__(self):
@@ -230,16 +241,18 @@ class MultitaskBatchfier(BaseBatchfier):
         indice = self.batch_indice(df)
         for l in indice:
             cur_batch = df.iloc[l:l+self.size]
-            tasks = cur_batch['tasks'].tolist()
+            tgt_languages = cur_batch['tgt_languages'].tolist()
             src_texts = cur_batch['src_texts'].tolist()
             src_lens = cur_batch['src_lens'].tolist()
             tgt_texts = cur_batch['tgt_texts'].tolist()
             tgt_lens = cur_batch['tgt_lens'].tolist()
             for i in range(len(src_texts)):
+                src_text, src_len = self.truncate_line(src_texts[i], src_lens[i])
+                tgt_text, tgt_len = self.truncate_line(tgt_texts[i], tgt_lens[i])
                 if self.sampling_mode:
-                    yield src_texts[i], src_lens[i], tgt_texts[i][:1], 1, tasks[i]
+                    yield src_text, src_len, tgt_text[:1], 1, tgt_languages[i]
                 else:
-                    yield src_texts[i], src_lens[i], tgt_texts[i], tgt_lens[i], tasks[i]
+                    yield src_text, src_len, tgt_text, tgt_len, tgt_languages[i]
 
     def collate_fn(self, batch):
         src_texts = [torch.Tensor(item[0]).long() for item in batch]
@@ -248,13 +261,13 @@ class MultitaskBatchfier(BaseBatchfier):
         tgt_texts = torch.nn.utils.rnn.pad_sequence(tgt_texts, batch_first=True, padding_value=self.padding_index)
         src_lens = torch.Tensor([item[1] for item in batch]).long()
         tgt_lens = torch.Tensor([item[3] for item in batch]).long()
-        tasks = torch.Tensor([item[4] for item in batch]).long()
+        tgt_languages = torch.Tensor([item[4] for item in batch]).long()
         return {'src': src_texts.to(self.device),
                 'src_len': src_lens.to(self.device),
                 'tgt': tgt_texts.to(self.device),
                 'tgt_len': tgt_lens.to(self.device),
                 'label': tgt_texts[:, 1:].to(self.device),
-                'tasks': tasks.to(self.device)}
+                'tgt_language': tgt_languages.to(self.device)}
 
 
 class MultitaskInferBatchfier(BaseBatchfier): # batchfy from raw text
@@ -300,21 +313,30 @@ class MultitaskInferBatchfier(BaseBatchfier): # batchfy from raw text
                 'tasks': tasks.to(self.device)}
 
 
-
 class ComplexityControlBatchfier(BaseBatchfier):
     def __init__(self, df_path, probs_path, batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 4096,
                  criteria: str = 'tgt_lens', padding_index=30000, epoch_shuffle=True,
-                 sampling_mode=False, rare_probs=[0.9], target_probs = [0.03, 0.07, 0.12, 0.20], device='cuda'):
+                 sampling_mode=False, target_probs=[0.9], target_rare_rates=[0.03, 0.07, 0.12, 0.20], device='cuda'):
         super(ComplexityControlBatchfier, self).__init__(batch_size, seq_len, minlen, maxlen, criteria, padding_index,
                                           epoch_shuffle, device)
         self.df_path = df_path
         self.probs = json.load(open(probs_path))
         self.dfs, self.tot_len, self.eos_idx = self.initialize()
-        self.rare_index = self.get_indices(self.probs, self.rare_probs)[-1]
-        self.target_probs = target_probs
+        self.rare_index = self.get_indices(self.probs, target_probs)[-1]
+        self.target_rare_rates = target_rare_rates
         self.sampling_mode = sampling_mode
 
-    def merge_dfs(self, path):
+    @staticmethod
+    def get_indices(cum_prob, target_probs):
+        cur = 0
+        res = []
+        for i in target_probs:
+            while cum_prob[cur] < i:
+                cur += 1
+            res.append(cur)
+        return res
+
+    def read_pickle(self, path):
         df = pd.read_pickle(path)
         src_len = [len(i) for i in df.src]
         tgt_len = [len(i) for i in df.tgt]
@@ -327,30 +349,21 @@ class ComplexityControlBatchfier(BaseBatchfier):
             text = np.array(text[1:])
             res = text > rare_ind
             return res.sum() / len(res)
-        target_probs = self.target_probs + [1.0]
+        target_rare_rates = self.target_rare_rates + [1.0]
         text_rare_ratio = rare_ratio(text, self.rare_index)
         idx = 0
-        temp = rate[idx]
+        temp = target_rare_rates[idx]
         while temp < text_rare_ratio:
             idx += 1
-            temp = rate[idx]
+            temp = target_rare_rates[idx]
         return idx
-
-    def get_indices(self, cum_prob):
-        target_probs = self.target_probs
-        cur = 0
-        res = []
-        for i in target_probs:
-            while cum_prob[cur] < i:
-                cur += 1
-            res.append(cur)
-        return res
 
     def initialize(self):
         l = 0
         dfs = []
         for i in self.df_path:
-            dfs.append(self.read_pickle(i))
+            temp = self.read_pickle(i)
+            dfs.append(temp)
             l += len(temp)
         eos = temp.texts[0][-1]
         return dfs, l, eos

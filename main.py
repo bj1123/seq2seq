@@ -13,13 +13,21 @@ from torch.utils.data.dataloader import DataLoader
 
 def get_model(args):
     print(args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim, args.n_heads,
-                                args.head_dim, args.n_enc_layers, args.n_dec_layers, args.dropout_rate,
-                                args.dropatt_rate, args.padding_index, args.shared_embedding, args.tie_embedding)
-    model = EncoderDecoderModel(args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim, args.n_heads,
-                                args.head_dim, args.n_enc_layers, args.n_dec_layers, args.dropout_rate,
-                                args.dropatt_rate, args.padding_index, pre_lnorm=args.pre_lnorm,
-                                rel_att=args.relative_pos, shared_embedding=args.shared_embedding,
-                                tie_embedding=args.tie_embedding)
+          args.head_dim, args.n_enc_layers, args.n_dec_layers, args.dropout_rate,
+          args.dropatt_rate, args.padding_index, args.shared_embedding, args.tie_embedding)
+    if args.task == 'seq2seq':
+        model = EncoderDecoderModel(args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim,
+                                    args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
+                                    args.dropout_rate,
+                                    args.dropatt_rate, args.padding_index, pre_lnorm=args.pre_lnorm,
+                                    rel_att=args.relative_pos, shared_embedding=args.shared_embedding,
+                                    tie_embedding=args.tie_embedding)
+    elif args.task == 'multitask':
+        model = CrossLingualModel(args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim,
+                                  args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
+                                  args.dropout_rate, args.dropatt_rate, args.padding_index, pre_lnorm=args.pre_lnorm,
+                                  rel_att=args.relative_pos, shared_embedding=args.shared_embedding,
+                                  tie_embedding=args.tie_embedding)
     initializer = Initializer('normal', 0.02, 0.1)
     initializer.initialize(model)
     model = model.to(args.device)
@@ -27,12 +35,12 @@ def get_model(args):
 
 
 def get_batchfier(args):
-    if args.mode =='seq2seq':
+    if args.task == 'seq2seq':
         train_batchfier = MTBatchfier(args.train_src_path, args.train_tgt_path, args.batch_size, args.seq_len,
                                       padding_index=args.padding_index, device=args.device)
         test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, args.batch_size, args.seq_len,
                                      padding_index=args.padding_index, device=args.device)
-    elif args.mode =='multitask':
+    elif args.task == 'multitask':
         train_batchfier = MultitaskBatchfier(args.train_path, args.special_token_indice, args.batch_size, args.seq_len,
                                              padding_index=args.padding_index, device=args.device)
         test_batchfier = MultitaskBatchfier(args.test_path, args.special_token_indice, args.batch_size, args.seq_len,
@@ -97,4 +105,3 @@ if __name__ == '__main__':
         torch.save(model.state_dict(), savepath)
         # test
     print(res)
-    

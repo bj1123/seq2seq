@@ -45,7 +45,7 @@ class DSReformatter:
 
 
 class WikiReformatter:
-    def __init__(self, dir_path, tokens_per_chunk = 256):
+    def __init__(self, dir_path, tokens_per_chunk = 128):
         self.dir_path = dir_path
         self.tokens_per_chunk = tokens_per_chunk
 
@@ -75,7 +75,7 @@ class WikiReformatter:
 
 
 class NaverNewsReformatter:
-    def __init__(self, dir_path, ratios=[0.8, 0.1, 0.1], tokens_per_chunk=256):
+    def __init__(self, dir_path, ratios=[0.8, 0.1, 0.1], tokens_per_chunk=128):
         self.dir_path = dir_path
         self.ratios = ratios
         self.tokens_per_chunk = tokens_per_chunk
@@ -141,6 +141,7 @@ class NaverNewsReformatter:
     def get_indice(self, data_size):
         train_idx, valid_idx = int(data_size * self.ratios[0]), int(data_size * (self.ratios[0] + self.ratios[1]))
         return train_idx, valid_idx
+
 
 class AIHubReformatter:
     def __init__(self, dir_path, ratios=[0.8, 0.1, 0.1]):
