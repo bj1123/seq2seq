@@ -60,30 +60,32 @@ class BaseBatchfier(IterableDataset):
 
 
 class MTBatchfier(BaseBatchfier):
-    def __init__(self, df_path, batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 4096,
+    def __init__(self, src_filepaths, tgt_filepaths, batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 4096,
                  criteria: str = 'tgt_lens', padding_index=30000, epoch_shuffle=True,
                  sampling_mode=False, device='cuda'):
         super(MTBatchfier, self).__init__(batch_size, seq_len, minlen, maxlen, criteria, padding_index,
                                           epoch_shuffle, device)
-        self.df_path = df_path
+        self.fl = (src_filepaths, tgt_filepaths)
         self.dfs, self.tot_len, self.eos_idx = self.initialize()
         self.sampling_mode = sampling_mode
 
     @staticmethod
-    def merge_dfs(path):
-        df = pd.read_pickle(path)
-        src_len = [len(i) for i in df.src]
-        tgt_len = [len(i) for i in df.tgt]
-        return pd.DataFrame({'src_texts': df.src, 'src_lens': src_len,
-                             'tgt_texts': df.tgt, 'tgt_lens': tgt_len})
+    def read_pickle(src, tgt):
+        src = pd.read_pickle(src)
+        tgt = pd.read_pickle(tgt)
+        src_len = [len(i) for i in src.texts]
+        tgt_len = [len(i) for i in tgt.texts]
+        return pd.DataFrame({'src_texts': src.texts, 'src_lens': src_len,
+                             'tgt_texts': tgt.texts, 'tgt_lens': tgt_len})
 
     def initialize(self):
         l = 0
         dfs = []
-        for i in self.df_path:
-            dfs.append(self.read_pickle(i))
+        for src, tgt in zip(*self.fl):
+            temp = self.read_pickle(src, tgt)
             l += len(temp)
-        eos = temp.texts[0][-1]
+            dfs.append(temp)
+        eos = dfs[-1].tgt_texts[0][-1]
         return dfs, l, eos
 
     def __len__(self):
@@ -314,16 +316,17 @@ class MultitaskInferBatchfier(BaseBatchfier): # batchfy from raw text
 
 
 class ComplexityControlBatchfier(BaseBatchfier):
-    def __init__(self, df_path, probs_path, batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 4096,
+    def __init__(self, src_filepaths, tgt_filepaths, probs_path, batch_size: int = 32,
+                 seq_len=512, minlen=50, maxlen: int = 4096,
                  criteria: str = 'tgt_lens', padding_index=30000, epoch_shuffle=True,
                  sampling_mode=False, target_probs=[0.9], target_rare_rates=[0.03, 0.07, 0.12, 0.20], device='cuda'):
         super(ComplexityControlBatchfier, self).__init__(batch_size, seq_len, minlen, maxlen, criteria, padding_index,
-                                          epoch_shuffle, device)
-        self.df_path = df_path
+                                                         epoch_shuffle, device)
+        self.fl = (src_filepaths, tgt_filepaths)
         self.probs = json.load(open(probs_path))
-        self.dfs, self.tot_len, self.eos_idx = self.initialize()
         self.rare_index = self.get_indices(self.probs, target_probs)[-1]
         self.target_rare_rates = target_rare_rates
+        self.dfs, self.tot_len, self.eos_idx = self.initialize()
         self.sampling_mode = sampling_mode
 
     @staticmethod
@@ -336,13 +339,15 @@ class ComplexityControlBatchfier(BaseBatchfier):
             res.append(cur)
         return res
 
-    def read_pickle(self, path):
-        df = pd.read_pickle(path)
-        src_len = [len(i) for i in df.src]
-        tgt_len = [len(i) for i in df.tgt]
-        tgt_cluster = [self.target_cluster(i) for i in df.tgt]
-        return pd.DataFrame({'src_texts': df.src, 'src_lens': src_len,
-                             'tgt_texts': df.tgt, 'tgt_lens': tgt_len, 'tgt_clusters':tgt_cluster})
+    def read_pickle(self, src, tgt):
+        src = pd.read_pickle(src)
+        tgt = pd.read_pickle(tgt)
+
+        src_len = [len(i) for i in src.texts]
+        tgt_len = [len(i) for i in tgt.texts]
+        tgt_cluster = [self.target_cluster(i) for i in tgt.texts]
+        return pd.DataFrame({'src_texts': src.texts, 'src_lens': src_len,
+                             'tgt_texts': tgt.texts, 'tgt_lens': tgt_len, 'tgt_clusters': tgt_cluster})
 
     def target_cluster(self, text):
         def rare_ratio(text, rare_ind):
@@ -361,11 +366,11 @@ class ComplexityControlBatchfier(BaseBatchfier):
     def initialize(self):
         l = 0
         dfs = []
-        for i in self.df_path:
-            temp = self.read_pickle(i)
+        for src, tgt in zip(*self.fl):
+            temp = self.read_pickle(src, tgt)
             dfs.append(temp)
             l += len(temp)
-        eos = temp.texts[0][-1]
+        eos = dfs[-1].tgt_texts[0][-1]
         return dfs, l, eos
 
     def __len__(self):

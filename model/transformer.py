@@ -326,11 +326,36 @@ class CrossLingualModel(nn.Module):
 class ComplexityAwareModel(EncoderDecoderModel):
     def __init__(self, vocab_size: int, seq_len: int, hidden_dim: int, projection_dim: int, n_heads: int, head_dim: int,
                  enc_num_layers: int, dec_num_layers: int, dropout_rate: float, dropatt_rate: float, padding_index: int,
-                 n_cluster:int, pre_lnorm: bool = False, same_lengths: bool = False, rel_att: bool = False,
+                 cutoffs:list, pre_lnorm: bool = False, same_lengths: bool = False, rel_att: bool = False,
                  shared_embedding=False, tie_embedding=False, **kwargs):
         super(ComplexityAwareModel, self).__init__(vocab_size, seq_len, hidden_dim, projection_dim, n_heads,
                                                    head_dim, enc_num_layers, dec_num_layers, dropout_rate,
                                                    dropatt_rate, padding_index, pre_lnorm, same_lengths,
                                                    rel_att, shared_embedding, tie_embedding, ** kwargs)
         delattr(self, 'final')
-        self.final = ComplexityControllingSoftmax(vocab_size, hidden_dim)
+        self.n_clusters = len(cutoffs) + 1
+        self.final = ComplexityControllingSoftmax(vocab_size, hidden_dim, cutoffs, padding_index)
+        self.cluster_classification = nn.Linear(hidden_dim, self.n_clusters)
+
+    def forward(self, inp):
+        src, tgt, src_len, tgt_len, tgt_cluster =\
+            inp['src'], inp['tgt'], inp['src_len'], inp['tgt_len'], inp['tgt_cluster']
+        enc_out = inp['enc_out'] if 'enc_out' in inp else None  # if src is already encoded. used in decoding phase
+        tgt_mem = inp['tgt_mem'] if 'tgt_mem' in inp else None
+        out = {}
+        if enc_out is None:
+            from_enc = self.encode_src(inp)
+            out['enc_out'] = from_enc['enc_out']
+            out['enc_self_att'] = from_enc['enc_self_att']
+            enc_out = from_enc['enc_out']
+        tgt_mask = self.decoder.get_mask(tgt_mem, tgt_len)
+        tgt_to_src_mask = self.decoder.tgt_to_src_mask(src_len, tgt_len)
+        dec_out, new_tgt_mem, dec_self_att, inter_att = self.decoder(enc_out, tgt, tgt_mem, tgt_mask, tgt_to_src_mask)
+        cluster_logits = self.cluster_classification(enc_out[:,0])
+        logits = self.final(dec_out, tgt_cluster)
+        out['logits'] = logits
+        out['cluster_logits'] = cluster_logits
+        out['tgt_mem'] = new_tgt_mem
+        out['dec_self_att'] = dec_self_att
+        out['inter_att'] = inter_att
+        return out

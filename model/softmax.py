@@ -260,11 +260,20 @@ class ComplexityControllingSoftmax(nn.Module):
         self.logits = nn.Linear(hidden_dim, vocab_size, bias=False)
 
     def forward(self, x, clusters):
-        words_logits = self.logits(x)
-        cluster_logits = self.cluster_logit(x)
+        """
+        :param x: [bs, l, dim]
+        :param clusters: [bs ]
+        :return:
+        """
+        words_logits = self.logits(x)  # bs, l, vocab_size
         cluster_embeded = self.cluster_embedding(clusters)
-
-
+        cluster_logits = self.cluster_logit(x+cluster_embeded[:, None])  # bs, l, n_cluster
+        logits = torch.zeros(*x.size()[:2], self.vocab_size, dtype=x.dtype, device=x.device)
+        for i in range(self.n_clusters):
+            l, r = self.cutoffs[i], self.cutoffs[i + 1]
+            tail_prob = words_logits[..., l:r]
+            logits[:, l:r] = cluster_logits[..., i].unsqueeze(-1) + tail_prob
+        return logits
 
 
 class LinearTransform(nn.Module):

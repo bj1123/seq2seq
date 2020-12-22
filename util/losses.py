@@ -38,7 +38,8 @@ class PlainLoss(BaseLoss):
         self.seq2seq = seq2seq
         self.criteria = torch.nn.CrossEntropyLoss(ignore_index=padding_idx)
 
-    def forward(self, y_hat, y):
+    def forward(self, out, inp):
+        y_hat, y = out['logits'], inp['label']
         if self.seq2seq:
             y_hat = y_hat[:, :-1]
         if len(y_hat.size()) !=2:
@@ -48,6 +49,27 @@ class PlainLoss(BaseLoss):
         l = self.criteria(y_hat,y)
         self.cum_loss +=l
         return l
+
+    def get_description(self, step):
+        tok_loss = self.cum_loss
+        desc = " token loss : %f, token ppl : %f, acc : %f " % (
+            tok_loss / step, math.exp(tok_loss / step), self.cum_acc / step)
+        return desc
+
+
+class AuxiliaryLoss(BaseLoss):
+    def __init__(self, main_loss:BaseLoss, auxiliary_lambda=1):
+        super(AuxiliaryLoss, self).__init__()
+        self.main_loss = main_loss
+        self.aux_lambda = auxiliary_lambda
+        self.criteria = torch.nn.CrossEntropyLoss()
+
+    def forward(self, out, inp):
+        main_loss = self.main_loss(out, inp)
+        y_hat, y = out['cluster_logits'], inp['tgt_cluster']
+        aux_loss = self.criteria(y_hat,y)
+        self.cum_loss += aux_loss
+        return main_loss + self.aux_lambda * aux_loss
 
     def get_description(self, step):
         tok_loss = self.cum_loss
@@ -69,7 +91,8 @@ class LabelSmoothingLoss(BaseLoss):
         self.vocab_Size = vocab_size
         self.ignore_index = ignore_index
 
-    def forward(self, y_hat, y):
+    def forward(self, out, inp):
+        y_hat, y = out['logits'], inp['label']
         if self.seq2seq:
             y_hat = y_hat[:, :-1]
         if len(y_hat.size()) !=2:

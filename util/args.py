@@ -47,8 +47,7 @@ class MTArgument(BaseArgument):
         parser = argparse.ArgumentParser()
         parser.add_argument("--task", type=str)  # brute-force implementation. This is to be modified
         parser.add_argument("--is-sampling", action='store_true')  # brute-force implementation. This is to be modified
-        parser.add_argument("--src-path", type=str)
-        parser.add_argument("--tgt-path", type=str)
+        parser.add_argument("--dir-path", type=str)
         parser.add_argument("--dataset-name", type=str)
         parser.add_argument('--saved-model-folder', type=str)
         parser.add_argument('--saved-model-ckpt', type=str)
@@ -71,10 +70,8 @@ class MTArgument(BaseArgument):
     def load_files(self, data):
         dirname = os.path.join('data', 'saved_model', data['dataset_name'])
         basename = '{}_{}'.format(data['model_size'], data['learning_rate'])
-        data['train_src_path'] = files_including(data['src_path'], 'train')
-        data['train_tgt_path'] = files_including(data['tgt_path'], 'train')
-        data['test_src_path'] = files_including(data['src_path'], 'test')
-        data['test_tgt_path'] = files_including(data['tgt_path'], 'test')
+        data['train_path'] = files_including(data['src_path'], 'train')
+        data['test_path'] = files_including(data['src_path'], 'test')
         data['padding_index'] = data['vocab_size'] - 1
         data['savename'] = os.path.join(dirname, basename)
         if data['saved_model_folder'] and data['saved_model_ckpt']:

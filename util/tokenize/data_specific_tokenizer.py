@@ -17,42 +17,32 @@ class MTSpaceTokenizer(SpaceTokenizer):
         df.to_pickle(out)
 
 
-class HFBaseTokenizer(HFTokenizer):
+class WikiLargeTokenizer(HFTokenizer):
     def __init__(self, directory_path, prefix, vocab_size, tokenizer_class=tokenizers.BertWordPieceTokenizer,
                  morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser,
                  use_imap=True, split_jamo=False, **kwargs):
-        super(HFBaseTokenizer, self).__init__(directory_path, prefix, vocab_size,
-                                              tokenizer_class=tokenizer_class,
-                                              morph_analyzer_class=morph_analyzer_class,
-                                              cleanser_class=cleanser_class,
-                                              use_imap=use_imap,
-                                              split_jamo=split_jamo,
-                                              **kwargs)
-
-    @staticmethod
-    def read_pickle(file_path):
-        res = pd.read_pickle(file_path)
-        src = res['src'].tolist()
-        tgt = res['tgt'].tolist()
-        return src, tgt
+        super(WikiLargeTokenizer, self).__init__(directory_path, prefix, vocab_size,
+                                                 tokenizer_class=tokenizer_class,
+                                                 morph_analyzer_class=morph_analyzer_class,
+                                                 cleanser_class=cleanser_class,
+                                                 use_imap=use_imap,
+                                                 split_jamo=split_jamo,
+                                                 **kwargs)
 
     def _read_file(self, file_path, **kwargs):
-        if os.path.splitext(file_path)[-1] == '.pkl':
-            src, tgt = self.read_pickle(file_path)
-            return src + tgt
-        else:
-            return []
+        with open(file_path, 'r', encoding='utf-8') as f:
+            res = f.readlines()
+            res = list(map(lambda x: x, res))
+        return res
 
     def _encode_file(self, inp, out, **kwargs):
-        if os.path.splitext(inp)[-1] == '.pkl':
-            src, tgt = self.read_pickle(inp)
-            src_encoded = [self.tokenizer.encode(i.rstrip()).ids for i in src]
-            tgt_encoded = [self.tokenizer.encode(i.rstrip()).ids for i in tgt]
-            df = pd.DataFrame({'src': src_encoded, 'tgt': tgt_encoded})
-            return df
+        res = self._read_file(inp, **kwargs)
+        encoded = [self.tokenizer.encode(i.rstrip()).ids for i in res]
+        df = pd.DataFrame({'texts': encoded})
+        return df
 
 
-class MultiTaskTokenizer(HFBaseTokenizer):
+class MultiTaskTokenizer(HFTokenizer):
     def __init__(self, directory_path, prefix, vocab_size=10000, tokenizer_class='wp',
                  morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser, tokens_to_add=None,
                  use_imap=True, split_jamo=False, **kwargs):
