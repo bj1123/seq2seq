@@ -43,11 +43,22 @@ class MTArgument(BaseArgument):
     def __init__(self, path='config', is_train=True):
         super(MTArgument, self).__init__(path, is_train)
 
+    @staticmethod
+    def get_indices(cum_prob, target_probs=[0.4, 0.7, 0.9]):
+        cur = 0
+        res = []
+        for i in target_probs:
+            while cum_prob[cur] < i:
+                cur += 1
+            res.append(cur)
+        return res
+
     def get_args(self, is_test=False):
         parser = argparse.ArgumentParser()
         parser.add_argument("--task", type=str)  # brute-force implementation. This is to be modified
         parser.add_argument("--is-sampling", action='store_true')  # brute-force implementation. This is to be modified
-        parser.add_argument("--dir-path", type=str)
+        parser.add_argument("--src-path", type=str)
+        parser.add_argument("--tgt-path", type=str)
         parser.add_argument("--dataset-name", type=str)
         parser.add_argument('--saved-model-folder', type=str)
         parser.add_argument('--saved-model-ckpt', type=str)
@@ -56,6 +67,8 @@ class MTArgument(BaseArgument):
                                                 " losses that will be implemented in the future]",
                             type=str)
         parser.add_argument('--pre-lnorm', action='store_true')
+        parser.add_argument('--complexity-aware', action='store_true')
+        parser.add_argument('--prob-path', type=str)
         parser.add_argument("--model-checkpoint", help="transfer for finetune model", default="", type=str)
         if is_test:
             parser.add_argument('--sample-save-path', type=str)
@@ -63,16 +76,20 @@ class MTArgument(BaseArgument):
             parser.add_argument('--width', type=int)
             parser.add_argument('--temperature', type=float, default=1.0)
             parser.add_argument('--lengths-penalty', type=float, default=1.0)
-            return parser
-
         return parser
 
     def load_files(self, data):
-        dirname = os.path.join('data', 'saved_model', data['dataset_name'])
+        model_type = 'complexity' if data['complexity_aware'] else 'plain'
+        dirname = os.path.join('data', 'saved_model', data['dataset_name'], model_type)
         basename = '{}_{}'.format(data['model_size'], data['learning_rate'])
-        data['train_path'] = files_including(data['src_path'], 'train')
-        data['test_path'] = files_including(data['src_path'], 'test')
+        data['train_src_path'] = files_including(data['src_path'], 'train')
+        data['train_tgt_path'] = files_including(data['tgt_path'], 'train')
+        data['test_src_path'] = files_including(data['src_path'], 'test')
+        data['test_tgt_path'] = files_including(data['tgt_path'], 'test')
         data['padding_index'] = data['vocab_size'] - 1
+        data['cum_probs'] = load_json(data['prob_path'])
+        data['cutoffs'] = self.get_indices(data['cum_probs'])
+        data['rare_index'] = data['cutoffs'][-1]
         data['savename'] = os.path.join(dirname, basename)
         if data['saved_model_folder'] and data['saved_model_ckpt']:
             data['load_path'] = os.path.join(data['saved_model_folder'], data['saved_model_ckpt'])

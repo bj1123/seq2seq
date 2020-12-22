@@ -57,7 +57,7 @@ class PlainLoss(BaseLoss):
         return desc
 
 
-class AuxiliaryLoss(BaseLoss):
+class ComplexityLoss(BaseLoss):
     def __init__(self, main_loss:BaseLoss, auxiliary_lambda=1):
         super(AuxiliaryLoss, self).__init__()
         self.main_loss = main_loss
@@ -72,10 +72,15 @@ class AuxiliaryLoss(BaseLoss):
         return main_loss + self.aux_lambda * aux_loss
 
     def get_description(self, step):
-        tok_loss = self.cum_loss
-        desc = " token loss : %f, token ppl : %f, acc : %f " % (
-            tok_loss / step, math.exp(tok_loss / step), self.cum_acc / step)
+        complexity_loss = self.cum_loss
+        tok_loss = self.main_loss.cum_loss
+        desc = f"total loss: {(tok_loss + self.aux_lambda * complexity_loss)/step} token loss : {tok_loss / step}," \
+               f" token ppl : {math.exp(tok_loss / step)} acc : {self.cum_acc / step}"
         return desc
+
+    def clear_loss(self):
+        self.main_loss.clear_loss()
+        self.clear_loss()
 
 
 class LabelSmoothingLoss(BaseLoss):

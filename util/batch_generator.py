@@ -316,28 +316,17 @@ class MultitaskInferBatchfier(BaseBatchfier): # batchfy from raw text
 
 
 class ComplexityControlBatchfier(BaseBatchfier):
-    def __init__(self, src_filepaths, tgt_filepaths, probs_path, batch_size: int = 32,
+    def __init__(self, src_filepaths, tgt_filepaths, rare_index, batch_size: int = 32,
                  seq_len=512, minlen=50, maxlen: int = 4096,
                  criteria: str = 'tgt_lens', padding_index=30000, epoch_shuffle=True,
-                 sampling_mode=False, target_probs=[0.9], target_rare_rates=[0.03, 0.07, 0.12, 0.20], device='cuda'):
+                 sampling_mode=False, target_rare_rates=[0.03, 0.07, 0.12, 0.20], device='cuda'):
         super(ComplexityControlBatchfier, self).__init__(batch_size, seq_len, minlen, maxlen, criteria, padding_index,
                                                          epoch_shuffle, device)
         self.fl = (src_filepaths, tgt_filepaths)
-        self.probs = json.load(open(probs_path))
-        self.rare_index = self.get_indices(self.probs, target_probs)[-1]
+        self.rare_index = rare_index
         self.target_rare_rates = target_rare_rates
         self.dfs, self.tot_len, self.eos_idx = self.initialize()
         self.sampling_mode = sampling_mode
-
-    @staticmethod
-    def get_indices(cum_prob, target_probs):
-        cur = 0
-        res = []
-        for i in target_probs:
-            while cum_prob[cur] < i:
-                cur += 1
-            res.append(cur)
-        return res
 
     def read_pickle(self, src, tgt):
         src = pd.read_pickle(src)

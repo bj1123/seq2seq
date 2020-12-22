@@ -227,4 +227,9 @@ class Sampler:
 
 
 
+class ComplexitySampler(Sampler):
+    def __init__(self, model, mode, max_len, temperature, width, eos_index, use_cache=True, **kwargs):
+        super(ComplexitySampler, self).__init__(model, mode, max_len, temperature, width,
+                                                eos_index, use_cache, **kwargs)
+
 
