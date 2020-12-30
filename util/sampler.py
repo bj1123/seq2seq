@@ -77,6 +77,16 @@ class Sampler:
         x[ind[0].flip(0), ind[1].flip(0)] = ind[-1].flip(0).to(x.dtype) + 1
         return x
 
+    def pre_encode(self, inp):
+        enc_out = self.model.encode_src(inp)
+        inp['enc_out'] = enc_out['enc_out']
+
+    def expand_to_beamwidth(self, inp):
+        size = inp['enc_out'].size()
+        inp['enc_out'] = inp['enc_out'][:, None].repeat(1, self.width, 1, 1).view(-1, *size[1:])
+        inp['src_len'] = inp['src_len'][:, None].repeat(1, self.width).view(-1)
+        inp['tgt_len'] = inp['tgt_len'][:, None].repeat(1, self.width).view(-1)
+
     def get_maxlen(self, inp):
         batch_len = inp['src'].size(-1)
         return min(self.max_len, int(batch_len * 1.2))
@@ -116,10 +126,7 @@ class Sampler:
                 .view(bs * self.width, -1)  # [batch, beam, l]
             inp['tgt_len'] = inp['tgt_len'] + 1
         inp['tgt'] = new_tgt
-        size = inp['enc_out'].size()
-        inp['enc_out'] = inp['enc_out'][:, None].repeat(1, self.width, 1, 1).view(-1, *size[1:])
-        inp['src_len'] = inp['src_len'][:, None].repeat(1,self.width).view(-1)
-        inp['tgt_len'] = inp['tgt_len'][:, None].repeat(1,self.width).view(-1)
+        self.expand_to_beamwidth(inp)
         inp['history'] = i[..., None]  # [bs, width, 1]
         return probs, inp
 
@@ -208,8 +215,7 @@ class Sampler:
         cnt = 0
         max_len = self.get_maxlen(inp)
         with torch.no_grad():
-            enc_out = self.model.encode_src(inp)
-            inp['enc_out'] = enc_out['enc_out']
+            self.pre_encode(inp)
             for _ in range(max_len):
                 cnt += 1
                 out = self.model(inp)
@@ -226,10 +232,21 @@ class Sampler:
         return [self.truncate_eos(i) for i in sampled]
 
 
-
 class ComplexitySampler(Sampler):
     def __init__(self, model, mode, max_len, temperature, width, eos_index, use_cache=True, **kwargs):
         super(ComplexitySampler, self).__init__(model, mode, max_len, temperature, width,
                                                 eos_index, use_cache, **kwargs)
+
+    def pre_encode(self, inp):
+        enc_out = self.model.encode_src(inp)
+        inp['enc_out'] = enc_out['enc_out']
+        cluster_logit = self.model.cluster_predict(inp)
+        _, ind = cluster_logit.max(dim=-1)
+        inp['tgt_cluster'] = ind
+
+    def expand_to_beamwidth(self, inp):
+        super().expand_to_beamwidth(inp)
+        inp['tgt_cluster'] = inp['tgt_cluster'][:,None].repeat(1,self.width).view(-1)
+
 
 

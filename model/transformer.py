@@ -262,6 +262,7 @@ class CrossLingualModel(nn.Module):
                                       dropatt_rate, pre_lnorm, same_lengths, rel_att,
                                       vocab_size=vocab_size, seq_len=seq_len, padding_index=padding_index)
         self.tie_embedding = tie_embedding
+        self.dec_num_layers = dec_num_layers
         self.num_decoders = num_decoders
         self.hidden_dim = hidden_dim
         self.vocab_size = vocab_size
@@ -299,8 +300,8 @@ class CrossLingualModel(nn.Module):
         tgt_to_src_mask = self.decoder[0].tgt_to_src_mask(src_len, tgt_len)
         bs, l = tgt.size()
         z_logits = torch.zeros(size=(bs, l, self.vocab_size), dtype=enc_out.dtype, device=enc_out.device)
-        z_tgt_mem = [torch.zeros(size=(bs, l, self.hidden_dim*2), dtype=enc_out.dtype, device=enc_out.device)]
-
+        z_tgt_mem = [torch.zeros(size=(bs, l, self.hidden_dim*2), dtype=enc_out.dtype, device=enc_out.device)
+                     for _ in range(self.dec_num_layers)]
         for i in range(self.num_decoders):
             ind = (tgt_language == i).nonzero(as_tuple=False).squeeze(1)
             if ind.numel() == 0:
@@ -335,7 +336,12 @@ class ComplexityAwareModel(EncoderDecoderModel):
         delattr(self, 'final')
         self.n_clusters = len(cutoffs) + 1
         self.final = ComplexityControllingSoftmax(vocab_size, hidden_dim, cutoffs, padding_index)
-        self.cluster_classification = nn.Linear(hidden_dim, self.n_clusters)
+        self.cluster_classification = nn.Linear(hidden_dim, 5)
+
+    def cluster_predict(self, inp):
+        enc_out = inp['enc_out']
+        cluster_logits = self.cluster_classification(enc_out[:, 0])
+        return cluster_logits
 
     def forward(self, inp):
         src, tgt, src_len, tgt_len, tgt_cluster =\

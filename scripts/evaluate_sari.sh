@@ -5,5 +5,7 @@ echo $PYTHONPATH
 
 
 python util/metrics/sari.py \
---gt-path ../data/data-simplification/wikilarge/turkcorpus_raw_encoded_mapped \
---sample-path data/sampled/wikilarge/base_0.0001/epoch_4;
+--sample-path data/sampled/wikilarge/complexity/base_0.00011/epoch_8 \
+--decoder-dir ../data/data-simplification/wikilarge/splited \
+--prob-path ../data/data-simplification/wikilarge/splited/wp_tgt_10000-probs.json \
+--decoder-prefix wp_tgt_10000;

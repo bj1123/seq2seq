@@ -18,11 +18,11 @@ def get_model(args):
     if args.task == 'seq2seq':
         if args.complexity_aware:
             model = ComplexityAwareModel(args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim,
-                                        args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
-                                        args.dropout_rate,
-                                        args.dropatt_rate, args.padding_index, args.cutoffs, pre_lnorm=args.pre_lnorm,
-                                        rel_att=args.relative_pos, shared_embedding=args.shared_embedding,
-                                        tie_embedding=args.tie_embedding)
+                                         args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
+                                         args.dropout_rate,
+                                         args.dropatt_rate, args.padding_index, args.cutoffs, pre_lnorm=args.pre_lnorm,
+                                         rel_att=args.relative_pos, shared_embedding=args.shared_embedding,
+                                         tie_embedding=args.tie_embedding)
 
         else:
             model = EncoderDecoderModel(args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim,
@@ -48,10 +48,10 @@ def get_batchfier(args):
         if args.complexity_aware:
             train_batchfier = ComplexityControlBatchfier(args.train_src_path, args.train_tgt_path, args.rare_index,
                                                          args.batch_size, args.seq_len,
-                                          padding_index=args.padding_index, device=args.device)
-            test_batchfier = ComplexityControlBatchfier(args.test_src_path, args.test_tgt_path, rare_index,
+                                                         padding_index=args.padding_index, device=args.device)
+            test_batchfier = ComplexityControlBatchfier(args.test_src_path, args.test_tgt_path, args.rare_index,
                                                         args.batch_size, args.seq_len,
-                                         padding_index=args.padding_index, device=args.device)
+                                                        padding_index=args.padding_index, device=args.device)
         else:
             train_batchfier = MTBatchfier(args.train_src_path, args.train_tgt_path, args.batch_size, args.seq_len,
                                           padding_index=args.padding_index, device=args.device)
@@ -77,7 +77,7 @@ def get_loss(args):
             loss = PlainLoss(args.padding_index)
     else:
         raise NotImplementedError
-    if args.complexity_aware:
+    if args.task =='seq2seq' and args.complexity_aware:
         loss = ComplexityLoss(loss)
     return loss
 

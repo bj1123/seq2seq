@@ -124,7 +124,7 @@ class MTBatchfier(BaseBatchfier):
 
 class MultitaskBatchfier(BaseBatchfier):
     def __init__(self, df_paths, special_token_indice,
-                 batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 512,
+                 batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 256,
                  criteria: str = 'tgt_lens', padding_index=30000, epoch_shuffle=True,
                  sampling_mode=False, mask_ratio=0.15, device='cuda'):
         super(MultitaskBatchfier, self).__init__(batch_size, seq_len, minlen, maxlen, criteria, padding_index,
@@ -133,6 +133,7 @@ class MultitaskBatchfier(BaseBatchfier):
         self.special_token_indice = special_token_indice  # tokenizer indice
         self.special_token_dic = {i: {j: idx for idx, j in enumerate(special_token_indice[i].keys())}
                                   for i in special_token_indice}  # indice for feeding the model
+        print(self.special_token_dic)
         self.mask_ratio = mask_ratio
         self.dfs, self.tot_len, self.eos_idx = self.initialize()
         self.sampling_mode = sampling_mode
@@ -219,7 +220,7 @@ class MultitaskBatchfier(BaseBatchfier):
                 src_lens.append(src_len)
                 src_languages.append(src_lang)
 
-        return pd.DataFrame({'src_texts': srcs, 'src_lens': src_lens, 'tgt_texts': tgts, 'tgt_lens': src_lens,
+        return pd.DataFrame({'src_texts': tgts, 'src_lens': src_lens, 'tgt_texts': srcs, 'tgt_lens': src_lens,
                              'tasks': [self.special_token_dic['task']['[TRANSLATION]']]*len(tgts),
                              'src_languages': src_languages, 'tgt_languages': src_languages})
 
@@ -273,11 +274,15 @@ class MultitaskBatchfier(BaseBatchfier):
 
 
 class MultitaskInferBatchfier(BaseBatchfier): # batchfy from raw text
-    def __init__(self, file_path, tokenizer, batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 4096,
+    def __init__(self, file_path, special_token_indice, tokenizer, batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 4096,
                  padding_index=30000, device='cuda' ):
         super(MultitaskInferBatchfier, self).__init__(batch_size, seq_len, minlen, maxlen,
                                                       None, padding_index, False, device)
         self.filepath = file_path
+        self.special_token_indice = special_token_indice
+        self.special_token_dic = {i: {j: idx for idx, j in enumerate(special_token_indice[i].keys())}
+                                  for i in special_token_indice}  # indice for feeding the model
+        print(self.special_token_dic)
         self.tokenizer = tokenizer
         self.texts = self.initialize()
         self.eos_idx = tokenizer.token_to_id('[EOS]')
@@ -294,10 +299,10 @@ class MultitaskInferBatchfier(BaseBatchfier): # batchfy from raw text
         texts = self.texts
         tokenizer = self.tokenizer
         for text in texts:
-            prefix = [tokenizer.token_to_id('[KOREAN]'), tokenizer.token_to_id('[SIMPLIFICATION]')]
-            temp = [tokenizer.token_to_id('[KOREAN]'), tokenizer.token_to_id('[SIMPLIFICATION]')]
-            yield prefix + text, len(text) + 2, temp + [tokenizer.token_to_id('[SOS]')], 3,\
-                  tokenizer.token_to_id('[TRANSLATION]')
+            prefix = [tokenizer.token_to_id('[ENGLISH]'), tokenizer.token_to_id('[SIMPLIFICATION]')]
+            temp = [tokenizer.token_to_id('[ENGLISH]'), tokenizer.token_to_id('[SIMPLIFICATION]')]
+            lang = self.special_token_dic['language']['[ENGLISH]']
+            yield prefix + text, len(text) + 2, temp + [tokenizer.token_to_id('[SOS]')], 3, lang
 
     def collate_fn(self, batch):
         src_texts = [torch.Tensor(item[0]).long() for item in batch]
@@ -306,13 +311,13 @@ class MultitaskInferBatchfier(BaseBatchfier): # batchfy from raw text
         tgt_texts = torch.nn.utils.rnn.pad_sequence(tgt_texts, batch_first=True, padding_value=self.padding_index)
         src_lens = torch.Tensor([item[1] for item in batch]).long()
         tgt_lens = torch.Tensor([item[3] for item in batch]).long()
-        tasks = torch.Tensor([item[4] for item in batch]).long()
+        lang = torch.Tensor([item[4] for item in batch]).long()
         return {'src': src_texts.to(self.device),
                 'src_len': src_lens.to(self.device),
                 'tgt': tgt_texts.to(self.device),
                 'tgt_len': tgt_lens.to(self.device),
                 'label': tgt_texts[:, 1:].to(self.device),
-                'tasks': tasks.to(self.device)}
+                'tgt_language': lang.to(self.device)}
 
 
 class ComplexityControlBatchfier(BaseBatchfier):

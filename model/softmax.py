@@ -253,7 +253,8 @@ class ComplexityControllingSoftmax(nn.Module):
         super(ComplexityControllingSoftmax, self).__init__()
         self.padding_index = padding_index
         self.vocab_size = vocab_size
-        self.n_clusters = len(cutoffs) + 1
+        self.n_clusters = 5
+        self.n_cutoffs = len(cutoffs) + 1
         self.cutoffs = [0] + cutoffs + [vocab_size]
         self.cluster_logit = nn.Linear(hidden_dim, self.n_clusters, bias=False)
         self.cluster_embedding = nn.Embedding(self.n_clusters, hidden_dim)
@@ -269,10 +270,10 @@ class ComplexityControllingSoftmax(nn.Module):
         cluster_embeded = self.cluster_embedding(clusters)
         cluster_logits = self.cluster_logit(x+cluster_embeded[:, None])  # bs, l, n_cluster
         logits = torch.zeros(*x.size()[:2], self.vocab_size, dtype=x.dtype, device=x.device)
-        for i in range(self.n_clusters):
+        for i in range(self.n_cutoffs):
             l, r = self.cutoffs[i], self.cutoffs[i + 1]
             tail_prob = words_logits[..., l:r]
-            logits[:, l:r] = cluster_logits[..., i].unsqueeze(-1) + tail_prob
+            logits[..., l:r] = cluster_logits[..., i].unsqueeze(-1) + tail_prob
         return logits
 
 

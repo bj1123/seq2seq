@@ -59,7 +59,7 @@ class PlainLoss(BaseLoss):
 
 class ComplexityLoss(BaseLoss):
     def __init__(self, main_loss:BaseLoss, auxiliary_lambda=1):
-        super(AuxiliaryLoss, self).__init__()
+        super(ComplexityLoss, self).__init__()
         self.main_loss = main_loss
         self.aux_lambda = auxiliary_lambda
         self.criteria = torch.nn.CrossEntropyLoss()
@@ -74,13 +74,14 @@ class ComplexityLoss(BaseLoss):
     def get_description(self, step):
         complexity_loss = self.cum_loss
         tok_loss = self.main_loss.cum_loss
-        desc = f"total loss: {(tok_loss + self.aux_lambda * complexity_loss)/step} token loss : {tok_loss / step}," \
-               f" token ppl : {math.exp(tok_loss / step)} acc : {self.cum_acc / step}"
+        desc = f"total loss: {(tok_loss + self.aux_lambda * complexity_loss)/step:.3f}" \
+               f" token loss : {tok_loss / step:.3f}," \
+               f" token ppl : {math.exp(tok_loss / step):.3f} acc : {self.cum_acc / step} "
         return desc
 
     def clear_loss(self):
         self.main_loss.clear_loss()
-        self.clear_loss()
+        super().clear_loss()
 
 
 class LabelSmoothingLoss(BaseLoss):
@@ -99,10 +100,11 @@ class LabelSmoothingLoss(BaseLoss):
     def forward(self, out, inp):
         y_hat, y = out['logits'], inp['label']
         if self.seq2seq:
-            y_hat = y_hat[:, :-1]
+            y_hat = y_hat[:, :-1].contiguous()
         if len(y_hat.size()) !=2:
             y_hat = y_hat.contiguous().view(-1, y_hat.size(-1))
-            y = y.view(-1)
+            y = y.contiguous().view(-1)
+
         pred = y_hat.log_softmax(dim=-1)
 
         true_dist = self.one_hot.repeat(y_hat.size(0),1)

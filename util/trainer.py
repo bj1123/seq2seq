@@ -132,8 +132,7 @@ class Trainer:
                 if check_empty_text(inp):
                     continue
                 out = model(inp)
-
-                loss = criteria(out['logits'], inp['label'])
+                loss = criteria(out, inp)
                 step_loss += loss.item()
                 pbar_cnt += 1
                 description = criteria.get_description(pbar_cnt)

@@ -18,7 +18,7 @@ class MTSpaceTokenizer(SpaceTokenizer):
 
 
 class WikiLargeTokenizer(HFTokenizer):
-    def __init__(self, directory_path, prefix, vocab_size, tokenizer_class=tokenizers.BertWordPieceTokenizer,
+    def __init__(self, directory_path, prefix, vocab_size=10000, tokenizer_class='wp',
                  morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser,
                  use_imap=True, split_jamo=False, **kwargs):
         super(WikiLargeTokenizer, self).__init__(directory_path, prefix, vocab_size,
@@ -43,7 +43,7 @@ class WikiLargeTokenizer(HFTokenizer):
 
 
 class MultiTaskTokenizer(HFTokenizer):
-    def __init__(self, directory_path, prefix, vocab_size=10000, tokenizer_class='wp',
+    def __init__(self, directory_path, prefix, vocab_size=30000, tokenizer_class='wp',
                  morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser, tokens_to_add=None,
                  use_imap=True, split_jamo=False, **kwargs):
         from util.tokenize.data_reformatter import MultitaskReformatter
