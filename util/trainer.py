@@ -56,7 +56,7 @@ class Trainer:
             return pbar, n_bar + 1, 0, 0, 0
         self.epoch +=1
         model = self.model
-        batchfier = self.train_batchfier
+        batchfier = self.train_batchfier.to_iterator()
         criteria = self.criteria
         optimizer = self.optimizers
         scheduler = self.schedulers
@@ -116,7 +116,7 @@ class Trainer:
 
     def test_epoch(self):
         model = self.model
-        batchfier = self.test_batchfier
+        batchfier = self.test_batchfier.to_iterator()
 
         if isinstance(self.criteria,tuple):
             _,criteria= self.criteria

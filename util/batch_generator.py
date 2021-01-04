@@ -7,6 +7,7 @@ import os
 import pickle
 from abc import *
 from torch.utils.data.dataset import Dataset, IterableDataset
+from torch.utils.data.dataloader import DataLoader
 
 
 class BaseBatchfier(IterableDataset):
@@ -57,6 +58,9 @@ class BaseBatchfier(IterableDataset):
 
     def sort(self, df):
         return df.sort_values(self.criteria).reset_index(drop=True)
+
+    def to_iterator(self):
+        return DataLoader(self, self.size, collate_fn=self.collate_fn)
 
 
 class MTBatchfier(BaseBatchfier):
@@ -402,3 +406,187 @@ class ComplexityControlBatchfier(BaseBatchfier):
                 'tgt_len': tgt_lens.to(self.device),
                 'tgt_cluster': tgt_clusters.to(self.device),
                 'label': tgt_texts[:, 1:].to(self.device)}
+
+
+class FairBatchfier:
+    def __init__(self, dataset, device='cuda'):
+        from access.fairseq.base import (fairseq_preprocess, fairseq_train, fairseq_generate, get_fairseq_exp_dir)
+        from fairseq.utils import import_user_module
+        from fairseq import tasks
+        self.device = device
+        self.preprocessed_dir = fairseq_preprocess(dataset)
+        self.exp_dir = self.prepare_exp_dir()
+        self.args = self.fairseq_args(self.preprocessed_dir, exp_dir=self.exp_dir)
+        import_user_module(self.args)
+        self.task = tasks.setup_task(self.args)
+        self.load_dataset_splits(self.task, ['train', 'valid'])
+        self.max_positions = (1024, 1024)
+        self.epoch_itr = self.task.get_batch_iterator(
+            dataset=self.task.dataset(self.args.train_subset),
+            max_tokens=self.args.max_tokens,
+            max_sentences=self.args.max_sentences,
+            max_positions=self.max_positions,
+            ignore_invalid_inputs=True,
+            required_batch_size_multiple=self.args.required_batch_size_multiple,
+            seed=self.args.seed,
+            num_shards=self.args.distributed_world_size,
+            shard_id=self.args.distributed_rank,
+            num_workers=self.args.num_workers,
+        )
+
+    @staticmethod
+    def prepare_exp_dir():
+        from access.fairseq.base import get_fairseq_exp_dir
+        exp_dir = get_fairseq_exp_dir()
+        if exp_dir.exists():
+            shutil.rmtree(exp_dir)
+        exp_dir.mkdir(parents=True)
+        return exp_dir
+
+    @staticmethod
+    def fairseq_args(
+            preprocessed_dir,
+            exp_dir,
+            ngpus=None,
+            max_tokens=5000,
+            arch='fconv_iwslt_de_en',
+            pretrained_emb_path=None,
+            embeddings_dim=None,
+            # Transformer (decoder is the same as encoder for now)
+            encoder_embed_dim=512,
+            encoder_layers=6,
+            encoder_attention_heads=8,
+            # encoder_decoder_dim_ratio=1,
+            # share_embeddings=True,
+            max_epoch=50,
+            warmup_updates=None,
+            lr=0.1,
+            min_lr=1e-9,
+            dropout=0.2,
+            label_smoothing=0.1,
+            lr_scheduler='fixed',
+            weight_decay=0.0001,
+            criterion='label_smoothed_cross_entropy',
+            optimizer='nag',
+            validations_before_sari_early_stopping=10,
+            fp16=False):
+        from pathlib import Path
+        import shutil
+        from fairseq import options
+        exp_dir = Path(exp_dir)
+        preprocessed_dir = Path(preprocessed_dir)
+        exp_dir.mkdir(exist_ok=True, parents=True)
+        # Copy dictionaries to exp_dir for generation
+        shutil.copy(preprocessed_dir / 'dict.complex.txt', exp_dir)
+        shutil.copy(preprocessed_dir / 'dict.simple.txt', exp_dir)
+        train_parser = options.get_training_parser()
+        # if share_embeddings:
+        #     assert encoder_decoder_dim_ratio == 1
+        args = [
+            '--task',
+            'translation',
+            preprocessed_dir,
+            '--raw-text',
+            '--source-lang',
+            'complex',
+            '--target-lang',
+            'simple',
+            '--save-dir',
+            os.path.join(exp_dir, 'checkpoints'),
+            '--clip-norm',
+            0.1,
+            '--criterion',
+            criterion,
+            '--no-epoch-checkpoints',
+            '--save-interval-updates',
+            5000,  # Validate every n updates
+            '--validations-before-sari-early-stopping',
+            validations_before_sari_early_stopping,
+            '--arch',
+            arch,
+
+            # '--decoder-out-embed-dim', int(embeddings_dim * encoder_decoder_dim_ratio),  # Output dim of decoder
+            '--max-tokens',
+            max_tokens,
+            '--max-epoch',
+            max_epoch,
+            '--lr-scheduler',
+            lr_scheduler,
+            '--dropout',
+            dropout,
+            '--lr',
+            lr,
+            '--lr-shrink',
+            0.5,  # For reduce lr on plateau scheduler
+            '--min-lr',
+            min_lr,
+            '--weight-decay',
+            weight_decay,
+            '--optimizer',
+            optimizer,
+            '--label-smoothing',
+            label_smoothing,
+            '--seed',
+            random.randint(1, 1000),
+            # '--force-anneal', '200',
+            # '--distributed-world-size', '1',
+        ]
+        if arch == 'transformer':
+            args.extend([
+                '--encoder-embed-dim',
+                encoder_embed_dim,
+                '--encoder-ffn-embed-dim',
+                4 * encoder_embed_dim,
+                '--encoder-layers',
+                encoder_layers,
+                '--encoder-attention-heads',
+                encoder_attention_heads,
+                '--decoder-layers',
+                encoder_layers,
+                '--decoder-attention-heads',
+                encoder_attention_heads,
+            ])
+        if pretrained_emb_path is not None:
+            args.extend(['--encoder-embed-path', pretrained_emb_path if pretrained_emb_path is not None else ''])
+            args.extend(['--decoder-embed-path', pretrained_emb_path if pretrained_emb_path is not None else ''])
+        if embeddings_dim is not None:
+            args.extend(['--encoder-embed-dim', embeddings_dim])  # Input and output dim of encoder
+            args.extend(['--decoder-embed-dim', embeddings_dim])  # Input dim of decoder
+        if ngpus is not None:
+            args.extend(['--distributed-world-size', ngpus])
+        # if share_embeddings:
+        #     args.append('--share-input-output-embed')
+        if fp16:
+            args.append('--fp16')
+        if warmup_updates is not None:
+            args.extend(['--warmup-updates', warmup_updates])
+        args = [str(arg) for arg in args]
+        train_args = options.parse_args_and_arch(train_parser, args)
+        return train_args
+
+    @staticmethod
+    def load_dataset_splits(task, splits):
+        import itertools
+        for split in splits:
+            if split == 'train':
+                task.load_dataset(split, combine=True)
+            else:
+                for k in itertools.count():
+                    split_k = split + (str(k) if k > 0 else '')
+                    try:
+                        task.load_dataset(split_k, combine=False)
+                    except FileNotFoundError as e:
+                        if k > 0:
+                            break
+                        raise e
+
+    def to_iterator(self):
+        itr = self.epoch_itr.next_epoch_itr()
+        return itr
+        # for i in itr:
+        #
+        # {'src': src_texts.to(self.device),
+        #  'src_len': src_lens.to(self.device),
+        #  'tgt': tgt_texts.to(self.device),
+        #  'tgt_len': tgt_lens.to(self.device),
+        #  'label': tgt_texts[:, 1:].to(self.device)}

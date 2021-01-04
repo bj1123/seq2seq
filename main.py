@@ -8,7 +8,6 @@ from util.args import *
 from util.losses import *
 import apex
 from util.lr_scheduler import *
-from torch.utils.data.dataloader import DataLoader
 
 
 def get_model(args):
@@ -64,17 +63,16 @@ def get_batchfier(args):
                                             padding_index=args.padding_index, device=args.device)
     else:
         raise NotImplementedError
-    return DataLoader(train_batchfier, args.batch_size, collate_fn=train_batchfier.collate_fn), \
-           DataLoader(test_batchfier, args.batch_size, collate_fn=test_batchfier.collate_fn)
+    return train_batchfier, test_batchfier
 
 
-def get_loss(args):
+def get_loss(args, train_batchfier):
     lt = args.loss_type
     if lt == 'plain':
         if args.label_smoothing > 0:
-            loss = LabelSmoothingLoss(args.vocab_size, ignore_index=args.padding_index, device=args.device)
+            loss = LabelSmoothingLoss(args.vocab_size, ignore_index=train_batchfier.padding_index, device=args.device)
         else:
-            loss = PlainLoss(args.padding_index)
+            loss = PlainLoss(train_batchfier.padding_index)
     else:
         raise NotImplementedError
     if args.task =='seq2seq' and args.complexity_aware:
