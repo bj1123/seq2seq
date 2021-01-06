@@ -36,12 +36,11 @@ class PlainLoss(BaseLoss):
         super(PlainLoss, self).__init__()
         self.padding_idx = padding_idx
         self.seq2seq = seq2seq
+        self.criteria = torch.nn.CrossEntropyLoss()
         self.criteria = torch.nn.CrossEntropyLoss(ignore_index=padding_idx)
 
     def forward(self, out, inp):
         y_hat, y = out['logits'], inp['label']
-        if self.seq2seq:
-            y_hat = y_hat[:, :-1]
         if len(y_hat.size()) !=2:
             y_hat = y_hat.contiguous().view(-1, y_hat.size(-1))
             y = y.contiguous().view(-1)
@@ -99,8 +98,8 @@ class LabelSmoothingLoss(BaseLoss):
 
     def forward(self, out, inp):
         y_hat, y = out['logits'], inp['label']
-        if self.seq2seq:
-            y_hat = y_hat[:, :-1].contiguous()
+        # if self.seq2seq:
+        #     y_hat = y_hat[:, :-1].contiguous()
         if len(y_hat.size()) !=2:
             y_hat = y_hat.contiguous().view(-1, y_hat.size(-1))
             y = y.contiguous().view(-1)

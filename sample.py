@@ -6,16 +6,19 @@ import os
 from util.args import get_args
 from util.losses import *
 import apex
-from torch.utils.data.dataloader import DataLoader
 import time
 from main import get_model
 
 
 def get_batchfier(args):
-    test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, args.batch_size, args.seq_len,
+    if args.task == 'access':
+        test_batchfier = FairTestBatchfier(args.dataset, args.batch_size * 16, device=args.device)
+
+    elif args.task =='seq2seq':
+        test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, args.batch_size, args.seq_len,
                                  padding_index=args.padding_index, epoch_shuffle=False,
                                  device=args.device, sampling_mode=True)
-    return DataLoader(test_batchfier, args.batch_size, collate_fn=test_batchfier.collate_fn)
+    return test_batchfier.to_iterator()
 
 
 def get_sampler(args, model, batchfier):

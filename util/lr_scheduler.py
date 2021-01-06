@@ -8,7 +8,7 @@ class WarmupExponentialSchedule(LambdaLR):
         Exponentially decreases learning rate.
     """
     def __init__(self, optimizer, warmup_steps, t_epoch,
-                 first_decay_ratio=0.1, remainder_decay_ratio=0.75, decay_on_valid=True, last_epoch=-1):
+                 first_decay_ratio=0.1, remainder_decay_ratio=0.75, decay_on_valid=False, last_epoch=-1):
         self.warmup_steps = warmup_steps
         self.t_epoch = t_epoch
         self.coef = 1

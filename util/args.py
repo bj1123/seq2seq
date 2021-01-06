@@ -2,6 +2,7 @@ import os
 import yaml
 from util.files import *
 import argparse
+from abc import ABC, abstractmethod
 
 
 def get_args():
@@ -10,16 +11,19 @@ def get_args():
     parser.add_argument("--task", type=str)
     parents_args, _ = parser.parse_known_args()
     if parents_args.task == 'seq2seq':
-        args = MTArgument(is_train=not parents_args.is_sampling)
+        args = MTArgument(parser, is_train=not parents_args.is_sampling)
     elif parents_args.task == 'multitask':
-        args = MultitaskArgument(is_train=not parents_args.is_sampling)
+        args = MultitaskArgument(parser, is_train=not parents_args.is_sampling)
+    elif parents_args.task == 'access':
+        args = AccessArgument(parser, is_train=not parents_args.is_sampling)
     else:
         raise NotImplementedError
     return args
 
 
-class BaseArgument:
-    def __init__(self, path='config', is_train=True):
+class BaseArgument(ABC):
+    def __init__(self, parents_args, path='config', is_train=True):
+        self.parents_args = parents_args
         training_path = os.path.join(path, 'training.yaml')
         model_data = os.path.join(path, 'model.yaml')
         data = {}
@@ -38,10 +42,18 @@ class BaseArgument:
         self.load_files(data)
         self.__dict__ = data
 
+    @abstractmethod
+    def load_files(self, data):
+        pass
+
+    @abstractmethod
+    def get_args(self, is_test=False):
+        pass
+
 
 class MTArgument(BaseArgument):
-    def __init__(self, path='config', is_train=True):
-        super(MTArgument, self).__init__(path, is_train)
+    def __init__(self, parents_args, path='config', is_train=True):
+        super(MTArgument, self).__init__(parents_args, path, is_train)
 
     @staticmethod
     def get_indices(cum_prob, target_probs=[0.4, 0.7, 0.9]):
@@ -54,9 +66,7 @@ class MTArgument(BaseArgument):
         return res
 
     def get_args(self, is_test=False):
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--task", type=str)  # brute-force implementation. This is to be modified
-        parser.add_argument("--is-sampling", action='store_true')  # brute-force implementation. This is to be modified
+        parser = self.parents_args
         parser.add_argument("--src-path", type=str)
         parser.add_argument("--tgt-path", type=str)
         parser.add_argument("--dataset-name", type=str)
@@ -66,7 +76,6 @@ class MTArgument(BaseArgument):
         parser.add_argument("--loss-type", help="choice [plain, label-smoothing,"
                                                 " losses that will be implemented in the future]",
                             type=str)
-        parser.add_argument('--pre-lnorm', action='store_true')
         parser.add_argument('--complexity-aware', action='store_true')
         parser.add_argument('--prob-path', type=str)
         parser.add_argument("--model-checkpoint", help="transfer for finetune model", default="", type=str)
@@ -96,8 +105,8 @@ class MTArgument(BaseArgument):
 
 
 class MultitaskArgument(BaseArgument):
-    def __init__(self, path='config', is_train=True):
-        super(MultitaskArgument, self).__init__(path, is_train)
+    def __init__(self, parents_args, path='config', is_train=True):
+        super(MultitaskArgument, self).__init__(parents_args, path, is_train)
 
     @staticmethod
     def _get_filepath(path):
@@ -131,9 +140,7 @@ class MultitaskArgument(BaseArgument):
         return indice
 
     def get_args(self, is_test=False):
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--task", type=str)  # brute-force implementation. This is to be modified
-        parser.add_argument("--is-sampling", action='store_true')  # brute-force implementation. This is to be modified
+        parser = self.parents_args
         parser.add_argument("--dir-path", type=str)
         parser.add_argument("--tokenizer-prefix", type=str)
         parser.add_argument("--tokenizer-class", type=str, default='wp')
@@ -164,5 +171,37 @@ class MultitaskArgument(BaseArgument):
                               for i in file_paths.keys()}
         data['padding_index'] = data['vocab_size'] - 1
         data['savename'] = os.path.join(dirname, basename)
+        if data['saved_model_folder'] and data['saved_model_ckpt']:
+            data['load_path'] = os.path.join(data['saved_model_folder'], data['saved_model_ckpt'])
+
+
+class AccessArgument(BaseArgument):
+    def __init__(self, parents_args, path='config', is_train=True):
+        super(AccessArgument, self).__init__(parents_args, path, is_train)
+
+    def get_args(self, is_test=False):
+        parser = self.parents_args
+        parser.add_argument("--loss-type", help="choice [plain]"
+                                                " losses that will be implemented in the future]",
+                            type=str)
+
+        parser.add_argument("--dataset", type=str)
+        parser.add_argument('--model-size', type=str, default='base')
+        parser.add_argument('--complexity-aware', action='store_true')
+        parser.add_argument('--saved-model-folder', type=str)
+        parser.add_argument('--saved-model-ckpt', type=str)
+        if is_test:
+            parser.add_argument('--sample-save-path', type=str)
+            parser.add_argument('--sampling-mode', type=str)
+            parser.add_argument('--width', type=int)
+            parser.add_argument('--temperature', type=float, default=1.0)
+            parser.add_argument('--lengths-penalty', type=float, default=1.0)
+        return parser
+
+    def load_files(self, data):
+        dirname = os.path.join('data', 'saved_model', 'access')
+        basename = '{}_{}'.format(data['model_size'], data['learning_rate'])
+        data['savename'] = os.path.join(dirname, basename)
+        data['padding_index'] = 1
         if data['saved_model_folder'] and data['saved_model_ckpt']:
             data['load_path'] = os.path.join(data['saved_model_folder'], data['saved_model_ckpt'])

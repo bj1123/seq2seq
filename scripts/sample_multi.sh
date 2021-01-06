@@ -3,7 +3,7 @@
 export PYTHONPATH="${PYTHONPATH}:../"
 echo $PYTHONPATH
 
-CKPT=epoch_0_ckpt_1
+CKPT=epoch_7
 LR=0.00011
 
 CUDA_VISIBLE_DEVICES=0 python text_sample.py \

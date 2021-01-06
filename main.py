@@ -14,7 +14,7 @@ def get_model(args):
     print(args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim, args.n_heads,
           args.head_dim, args.n_enc_layers, args.n_dec_layers, args.dropout_rate,
           args.dropatt_rate, args.padding_index, args.shared_embedding, args.tie_embedding)
-    if args.task == 'seq2seq':
+    if args.task in ('seq2seq', 'access'):
         if args.complexity_aware:
             model = ComplexityAwareModel(args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim,
                                          args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
@@ -61,6 +61,8 @@ def get_batchfier(args):
                                              padding_index=args.padding_index, device=args.device)
         test_batchfier = MultitaskBatchfier(args.test_path, args.special_token_indice, args.batch_size, args.seq_len,
                                             padding_index=args.padding_index, device=args.device)
+    elif args.task =='access':
+        train_batchfier, test_batchfier = get_fair_batchfier(args.dataset, args.device)
     else:
         raise NotImplementedError
     return train_batchfier, test_batchfier
@@ -68,6 +70,7 @@ def get_batchfier(args):
 
 def get_loss(args, train_batchfier):
     lt = args.loss_type
+    print(lt)
     if lt == 'plain':
         if args.label_smoothing > 0:
             loss = LabelSmoothingLoss(args.vocab_size, ignore_index=train_batchfier.padding_index, device=args.device)
@@ -91,9 +94,9 @@ def get_trainer(args, model, train_batchfier, test_batchfier):
     decay_step = len(train_batchfier) * args.n_epoch // args.update_step
     scheduler = WarmupLinearSchedule(optimizer, args.warmup_step, decay_step, args.decay_on_valid)
     # scheduler = WarmupExponentialSchedule(optimizer, args.warmup_step, len(train_batchfier) // args.update_step)
-    criteria = get_loss(args)
+    criteria = get_loss(args, train_batchfier)
     trainer = Trainer(model, train_batchfier, test_batchfier, optimizer, scheduler, args.update_step, criteria,
-                      args.clip_norm, args.mixed_precision, intermittently_save_ckpt=True, save_name=args.savename,
+                      args.clip_norm, args.mixed_precision, save_name=args.savename,
                       n_ckpt=5)
     return trainer
 

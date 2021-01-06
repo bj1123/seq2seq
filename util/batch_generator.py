@@ -23,6 +23,7 @@ class BaseBatchfier(IterableDataset):
         self.padding_index = padding_index
         self.epoch_shuffle = epoch_shuffle
         self.device = device
+
         # self.size = len(self.df) / num_buckets
 
     def truncate_small(self, df, criteria='lens'):
@@ -271,7 +272,7 @@ class MultitaskBatchfier(BaseBatchfier):
         tgt_languages = torch.Tensor([item[4] for item in batch]).long()
         return {'src': src_texts.to(self.device),
                 'src_len': src_lens.to(self.device),
-                'tgt': tgt_texts.to(self.device),
+                'tgt': tgt_texts[:, :-1].to(self.device),
                 'tgt_len': tgt_lens.to(self.device),
                 'label': tgt_texts[:, 1:].to(self.device),
                 'tgt_language': tgt_languages.to(self.device)}
@@ -303,8 +304,8 @@ class MultitaskInferBatchfier(BaseBatchfier): # batchfy from raw text
         texts = self.texts
         tokenizer = self.tokenizer
         for text in texts:
-            prefix = [tokenizer.token_to_id('[ENGLISH]'), tokenizer.token_to_id('[SIMPLIFICATION]')]
-            temp = [tokenizer.token_to_id('[ENGLISH]'), tokenizer.token_to_id('[SIMPLIFICATION]')]
+            prefix = [tokenizer.token_to_id('[KOREAN]'), tokenizer.token_to_id('[SIMPLIFICATION]')]
+            temp = [tokenizer.token_to_id('[KOREAN]'), tokenizer.token_to_id('[SIMPLIFICATION]')]
             lang = self.special_token_dic['language']['[ENGLISH]']
             yield prefix + text, len(text) + 2, temp + [tokenizer.token_to_id('[SOS]')], 3, lang
 
@@ -409,20 +410,21 @@ class ComplexityControlBatchfier(BaseBatchfier):
 
 
 class FairBatchfier:
-    def __init__(self, dataset, device='cuda'):
-        from access.fairseq.base import (fairseq_preprocess, fairseq_train, fairseq_generate, get_fairseq_exp_dir)
+    def __init__(self, dataset, mode='train', device='cuda'):
+        from access.fairseq.base import fairseq_preprocess
         from fairseq.utils import import_user_module
         from fairseq import tasks
-        self.device = device
         self.preprocessed_dir = fairseq_preprocess(dataset)
+        self.device = device
         self.exp_dir = self.prepare_exp_dir()
         self.args = self.fairseq_args(self.preprocessed_dir, exp_dir=self.exp_dir)
         import_user_module(self.args)
         self.task = tasks.setup_task(self.args)
-        self.load_dataset_splits(self.task, ['train', 'valid'])
+        self.load_dataset_splits(self.task, [mode])
         self.max_positions = (1024, 1024)
+        self.padding_index = self.task.tgt_dict.pad_index
         self.epoch_itr = self.task.get_batch_iterator(
-            dataset=self.task.dataset(self.args.train_subset),
+            dataset=self.task.dataset(mode),
             max_tokens=self.args.max_tokens,
             max_sentences=self.args.max_sentences,
             max_positions=self.max_positions,
@@ -437,6 +439,7 @@ class FairBatchfier:
     @staticmethod
     def prepare_exp_dir():
         from access.fairseq.base import get_fairseq_exp_dir
+        import shutil
         exp_dir = get_fairseq_exp_dir()
         if exp_dir.exists():
             shutil.rmtree(exp_dir)
@@ -580,13 +583,71 @@ class FairBatchfier:
                             break
                         raise e
 
+    def __len__(self):
+        return len(self.epoch_itr)
+
+    def convert_inp(self, inp):
+        new_inp = {}
+        net = inp['net_input']
+        new_inp['src'] = net['src_tokens'].to(self.device)
+        new_inp['src_len'] = net['src_lengths'].to(self.device)
+        new_inp['tgt'] = net['prev_output_tokens'].to(self.device)
+        new_inp['tgt_len'] = (net['prev_output_tokens'] != 1).sum(dim=1).to(self.device)
+        new_inp['label'] = inp['target'].to(self.device)
+        return new_inp
+
     def to_iterator(self):
         itr = self.epoch_itr.next_epoch_itr()
-        return itr
-        # for i in itr:
-        #
-        # {'src': src_texts.to(self.device),
-        #  'src_len': src_lens.to(self.device),
-        #  'tgt': tgt_texts.to(self.device),
-        #  'tgt_len': tgt_lens.to(self.device),
-        #  'label': tgt_texts[:, 1:].to(self.device)}
+        for inp in itr:
+            new_inp = self.convert_inp(inp)
+            yield new_inp
+
+
+class FairTestBatchfier(IterableDataset, FairBatchfier):
+    def __init__(self, dataset, batch_size, ratios=[0.75, 0.75, 0.75, 0.95], device='cuda'):
+        super(FairTestBatchfier, self).__init__(dataset, 'test', device)
+        assert len(ratios) == 4
+        print(ratios)
+        self.strings = ['<DEPENDENCYTREEDEPTHRATIO_{}>', '<WORDRANKRATIO_{}>', '<LEVENSHTEIN_{}>', '<LENGTHRATIO_{}>']
+        self.indice = [self.task.src_dict.index(self.strings[i].format(ratios[i])) for i in range(len(ratios))]
+        self.filepath = f'/home/bj1123/access/resources/datasets/{dataset}/fairseq_preprocessed/test.complex-simple.complex'
+        self.task.tgt_dict.add_symbol('<eos>')
+        self.sos_idx = self.task.tgt_dict.index('</s>')
+        self.eos_idx = 2
+        # self.eos_idx = self.task.tgt_dict.index('<pad>')
+        # self.eos_idx = self.task.tgt_dict.index('▁.')
+        self.size = batch_size
+
+    def __iter__(self):
+        with open(self.filepath) as f:
+            lines = f.readlines()
+        for line in lines:
+            src_text = self.indice + self.task.src_dict.encode_line(line).tolist()
+            src_len = len(src_text)
+            tgt_text = [self.sos_idx]
+            yield src_text, src_len, tgt_text, 1
+
+    def collate_fn(self, batch):
+        src_texts = [torch.Tensor(item[0]).long() for item in batch]
+        src_texts = torch.nn.utils.rnn.pad_sequence(src_texts, batch_first=True, padding_value=self.padding_index)
+        tgt_texts = [torch.Tensor(item[2]).long() for item in batch]
+        tgt_texts = torch.nn.utils.rnn.pad_sequence(tgt_texts, batch_first=True, padding_value=self.padding_index)
+        src_lens = torch.Tensor([item[1] for item in batch]).long()
+        tgt_lens = torch.Tensor([item[3] for item in batch]).long()
+        return {'src': src_texts.to(self.device),
+                'src_len': src_lens.to(self.device),
+                'tgt': tgt_texts.to(self.device),
+                'tgt_len': tgt_lens.to(self.device),
+                'label': tgt_texts[:, 1:].to(self.device)}
+
+    def to_iterator(self):
+        return DataLoader(self, self.size, collate_fn=self.collate_fn)
+
+
+
+
+
+def get_fair_batchfier(dataset, device):
+    train_batchfier = FairBatchfier(dataset, 'train', device)
+    valid_batchfier = FairBatchfier(dataset, 'valid', device)
+    return train_batchfier, valid_batchfier
