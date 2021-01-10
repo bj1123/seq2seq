@@ -78,8 +78,7 @@ class Sampler:
         return x
 
     def pre_encode(self, inp):
-        enc_out = self.model.encode_src(inp)
-        inp['enc_out'] = enc_out['enc_out']
+        self.model.encode_src(inp)
 
     def expand_to_beamwidth(self, inp):
         size = inp['enc_out'].size()

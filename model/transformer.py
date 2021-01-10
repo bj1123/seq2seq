@@ -51,6 +51,24 @@ class DecoderBlock(BaseBlock):
         return out, new_mem, self_att_prob, inter_att_prob
 
 
+class SentenceAwareDecoderBlock(DecoderBlock):
+    def __init__(self, hidden_dim: int, projection_dim: int, n_heads: int, head_dim: int,
+                 dropout_rate: float, dropatt_rate: float, pre_lnorm: bool = False, rel_att=True):
+        super(SentenceAwareDecoderBlock, self).__init__(hidden_dim, projection_dim, n_heads, head_dim,
+                                           dropout_rate, dropatt_rate, pre_lnorm, rel_att)
+        self.sentence_att = RelMultiheadAtt(hidden_dim, n_heads, head_dim, dropout_rate, dropatt_rate, pre_lnorm) \
+            if rel_att else MultiheadAtt(hidden_dim, n_heads, head_dim, dropout_rate, dropatt_rate, pre_lnorm)
+
+    def forward(self, inp, *args):
+        src, tgt, tgt_mem, tgt_mask, tgt_to_src_mask, tgt_emb = inp
+        out, new_mem, self_att_prob = self.self_att(tgt, tgt, tgt_mem, tgt_mask, *args)
+        out, _, inter_att_prob = self.multihead_att(out, src, None, tgt_to_src_mask, *args)  # if src is None, this step is skipped
+        tgt_out, _, _ = self.sentence_att(tgt_emb, tgt, tgt_mem, tgt_mask, *args)
+        out = self.feedforward(out + tgt_out)
+        return out, new_mem, self_att_prob, inter_att_prob
+
+
+
 class BaseNetwork(nn.Module):
     def __init__(self, hidden_dim: int, projection_dim: int,
                  n_heads: int, head_dim: int, n_layers: int,
@@ -139,11 +157,12 @@ class DecoderNetwork(BaseNetwork):
     def __init__(self, hidden_dim: int, projection_dim: int,
                  n_heads: int, head_dim: int, n_layers: int,
                  dropout_rate: float, dropatt_rate: float,
-                 pre_lnorm: bool = False, same_lengths: bool = False, rel_att: bool = False, **kwargs):
+                 pre_lnorm: bool = False, same_lengths: bool = False, rel_att: bool = False, decoder_block=DecoderBlock,
+                 **kwargs):
         super(DecoderNetwork, self).__init__(hidden_dim, projection_dim, n_heads, head_dim, n_layers,
                                              dropout_rate, dropatt_rate,
                                              pre_lnorm, same_lengths, rel_att,
-                                             DecoderBlock, False, **kwargs)
+                                             decoder_block, False, **kwargs)
 
     @staticmethod
     def tgt_to_src_mask(src_len, tgt_len):
@@ -155,7 +174,7 @@ class DecoderNetwork(BaseNetwork):
         res = zeros[None] + src_masks[:,None]
         return res.byte()
 
-    def forward(self, src, tgt, mem, tgt_mask, tgt_to_src_mask):
+    def forward(self, src, tgt, mem, tgt_mask, tgt_to_src_mask, *args):
         """
         :param src: final hidden states from source texts [Bs, len, hidden_size]
         :param tgt: input indice of target texts [Bs, len]
@@ -172,7 +191,7 @@ class DecoderNetwork(BaseNetwork):
         for i in range(self.n_layers):
             block = self.main_nets[i]
             mem_i = mem[i] if mem is not None else None
-            main_inp = src, out, mem_i, tgt_mask, tgt_to_src_mask
+            main_inp = src, out, mem_i, tgt_mask, tgt_to_src_mask + args
             out, new_mem, self_att_prob, inter_att_prob = block(main_inp)
             new_mems.append(new_mem)
             self_att_probs.append(self_att_prob)
@@ -208,7 +227,9 @@ class EncoderDecoderModel(nn.Module):
         src, src_len = inp['src'], inp['src_len']
         src_mask = self.encoder.get_mask(None, src_len)
         enc_out, _, enc_self_atts = self.encoder(src, None, src_mask)
-        return {'enc_out': enc_out, 'enc_self_att': enc_self_atts}
+        inp['enc_out'] = enc_out
+        inp['enc_self_att'] = enc_self_atts
+        return enc_out
 
     def forward(self, inp):
         src, tgt, src_len, tgt_len = inp['src'], inp['tgt'], inp['src_len'], inp['tgt_len']
@@ -216,10 +237,7 @@ class EncoderDecoderModel(nn.Module):
         tgt_mem = inp['tgt_mem'] if 'tgt_mem' in inp else None
         out = {}
         if enc_out is None:
-            from_enc = self.encode_src(inp)
-            out['enc_out'] = from_enc['enc_out']
-            out['enc_self_att'] = from_enc['enc_self_att']
-            enc_out = from_enc['enc_out']
+            enc_out = self.encode_src(inp)
         tgt_mask = self.decoder.get_mask(tgt_mem, tgt_len)
         tgt_to_src_mask = self.decoder.tgt_to_src_mask(src_len, tgt_len)
         dec_out, new_tgt_mem, dec_self_att, inter_att = self.decoder(enc_out, tgt, tgt_mem, tgt_mask, tgt_to_src_mask)
@@ -292,9 +310,7 @@ class CrossLingualModel(nn.Module):
         tgt_mem = inp['tgt_mem'] if 'tgt_mem' in inp else None
         out = {}
         if enc_out is None:
-            from_enc = self.encode_src(inp)
-            out['enc_out'] = from_enc['enc_out']
-            out['enc_self_att'] = from_enc['enc_self_att']
+            self.encode_src(inp)
             enc_out = from_enc['enc_out']
         tgt_mask = self.decoder[0].get_mask(tgt_mem, tgt_len)
         tgt_to_src_mask = self.decoder[0].tgt_to_src_mask(src_len, tgt_len)
@@ -350,10 +366,7 @@ class ComplexityAwareModel(EncoderDecoderModel):
         tgt_mem = inp['tgt_mem'] if 'tgt_mem' in inp else None
         out = {}
         if enc_out is None:
-            from_enc = self.encode_src(inp)
-            out['enc_out'] = from_enc['enc_out']
-            out['enc_self_att'] = from_enc['enc_self_att']
-            enc_out = from_enc['enc_out']
+            enc_out = self.encode_src(inp)
         tgt_mask = self.decoder.get_mask(tgt_mem, tgt_len)
         tgt_to_src_mask = self.decoder.tgt_to_src_mask(src_len, tgt_len)
         dec_out, new_tgt_mem, dec_self_att, inter_att = self.decoder(enc_out, tgt, tgt_mem, tgt_mask, tgt_to_src_mask)
@@ -361,6 +374,61 @@ class ComplexityAwareModel(EncoderDecoderModel):
         logits = self.final(dec_out, tgt_cluster)
         out['logits'] = logits
         out['cluster_logits'] = cluster_logits
+        out['tgt_mem'] = new_tgt_mem
+        out['dec_self_att'] = dec_self_att
+        out['inter_att'] = inter_att
+        return out
+
+
+class SentenceAwareModel(EncoderDecoderModel):
+    def __init__(self, vocab_size: int, seq_len: int, hidden_dim: int, projection_dim: int, n_heads: int, head_dim: int,
+                 enc_num_layers: int, dec_num_layers: int, dropout_rate: float, dropatt_rate: float, padding_index: int,
+                 pre_lnorm: bool = False, same_lengths: bool = False, rel_att: bool = False, shared_embedding=False,
+                 tie_embedding=False, **kwargs):
+        delattr(self, 'decoder')
+        self.tgt_emb_prediction = nn.Sequential(nn.Linear(hidden_dim, hidden_dim * 4), nn.ReLU(),
+                                                 nn.Linear(hidden_dim * 4, hidden_dim))
+        self.tgt_encoder = EncoderNetwork(hidden_dim, projection_dim, n_heads, head_dim, enc_num_layers, dropout_rate,
+                                          dropatt_rate, pre_lnorm, same_lengths, rel_att,
+                                          vocab_size=vocab_size, seq_len=seq_len, padding_index=padding_index)
+        self.decoder = DecoderNetwork(hidden_dim, projection_dim, n_heads, head_dim, n_layers,
+                                             dropout_rate, dropatt_rate,
+                                             pre_lnorm, same_lengths, rel_att,
+                                             SentenceAwareDecoderBlock)
+
+    def encode_src(self, inp):
+        enc_out = super().encode_src(inp)
+        tgt_emb_hat = self.tgt_emb_prediction(enc_out[:, 0])
+        inp['tgt_emb_prediction'] = tgt_emb_hat
+        return enc_out, tgt_emb_hat
+
+    def encode_tgt(self, inp):
+        tgt, tgt_len = inp['tgt'], inp['tgt_len']
+        tgt_mask = self.encoder.get_mask(None, tgt_len)
+        enc_out, _, enc_self_atts = self.tgt_encoder(tgt, None, tgt_mask)
+        inp['tgt_emb'] = enc_out
+        return enc_out
+
+    def forward(self, inp):
+        src, tgt, src_len, tgt_len = inp['src'], inp['tgt'], inp['src_len'], inp['tgt_len']
+        is_train = False if 'enc_out' in inp else True
+        enc_out = inp['enc_out'] if 'enc_out' in inp else None  # if src is already encoded. used in decoding phase
+        tgt_emb_hat = inp['tgt_emb_hat'] if 'tgt_emb' in inp else None
+        tgt_mem = inp['tgt_mem'] if 'tgt_mem' in inp else None
+        out = {}
+        if enc_out is None:
+            enc_out, tgt_emb_hat = self.encode_src(inp)
+        if is_train:
+            tgt_emb = self.tgt_encoder(inp)
+        else:
+            tgt_emb = tgt_emb_hat
+        tgt_mask = self.decoder.get_mask(tgt_mem, tgt_len)
+        tgt_to_src_mask = self.decoder.tgt_to_src_mask(src_len, tgt_len)
+        tgt_emb_extended = tgt_emb.detach().unsqueeze(1).repeat(1,tgt.size(1),1)
+        dec_out, new_tgt_mem, dec_self_att, inter_att = self.decoder(enc_out, tgt, tgt_mem, tgt_mask, tgt_to_src_mask,
+                                                                     tgt_emb_extended)
+        logits = self.final(dec_out)
+        out['logits'] = logits
         out['tgt_mem'] = new_tgt_mem
         out['dec_self_att'] = dec_self_att
         out['inter_att'] = inter_att
