@@ -12,7 +12,7 @@ from main import get_model
 
 def get_batchfier(args):
     if args.task == 'access':
-        test_batchfier = FairTestBatchfier(args.dataset, args.batch_size * 16, device=args.device)
+        test_batchfier = FairTestBatchfier(args.dataset, args.batch_size * 4, device=args.device)
 
     elif args.task =='seq2seq':
         test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, args.batch_size, args.seq_len,
@@ -27,10 +27,12 @@ def get_sampler(args, model, batchfier):
         opt_level = 'O2'
         model, optimizer = apex.amp.initialize(model, optimizer, opt_level=opt_level)
 
-    if args.complexity_aware:
+    if args.model_type == 'complexity-aware':
         trainer = ComplexitySampler(model, args.sampling_mode, 200, args.temperature, args.width,
                                     batchfier.dataset.eos_idx, use_cache=True, length_penalty=args.lengths_penalty)
-
+    elif args.model_type == 'sentence-aware':
+        trainer = SentenceAwareSampler(model, args.sampling_mode, 200, args.temperature, args.width,
+                                    batchfier.dataset.eos_idx, use_cache=True, length_penalty=args.lengths_penalty)
     else:
         trainer = Sampler(model, args.sampling_mode, 200, args.temperature, args.width, batchfier.dataset.eos_idx,
                           use_cache=True, length_penalty=args.lengths_penalty)

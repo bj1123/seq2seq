@@ -2,7 +2,7 @@ n_epoch: 100
 relative_pos: False
 gathered: True
 device: 'cuda'
-batch_size: 8
+batch_size: 16
 gpu0_size: 8
 update_step: 1
 mixed_precision: True

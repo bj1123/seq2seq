@@ -41,7 +41,7 @@ class MultiheadAtt(AttBase):
         v = value.view(bs,ks,self.n_head,self.head_dim)
         q = query.view(bs,qs,self.n_head,self.head_dim)
 
-        att_score = torch.einsum('bqnd,bknd->bqkn',q,k)
+        att_score = torch.einsum('bqnd,bknd->bqkn', q, k)
         att_score.mul_(self.scale)
 
         # attend
@@ -53,13 +53,20 @@ class MultiheadAtt(AttBase):
         encoder_mask = mask.bool()
         att_score.masked_fill_(encoder_mask.unsqueeze(-1), -6e4)
         # print(att_score)
-        att_prob = torch.softmax(att_score,2)
+        att_prob = torch.softmax(att_score, 2)
         att_prob = self.dropatt(att_prob)
 
-        attended = torch.einsum('bqkn,bknd->bqnd',att_prob,v)
+        attended = torch.einsum('bqkn,bknd->bqnd', att_prob, v)
         out = self.o_net(attended.contiguous().view(bs,qs,-1))
         out = self.dropout(out)
         return out, att_prob
+
+    def projection(self, q, kv, mem):
+        kv = self.kv_net(kv)
+        c = torch.cat([mem,kv],1)
+        key, value = c.chunk(2,-1)
+        query = self.q_net(q)
+        return kv, query, key, value
 
     def forward(self, q, kv, mem, mask):
         """
@@ -78,11 +85,7 @@ class MultiheadAtt(AttBase):
             kv = self.layer_norm(kv)
             q = self.layer_norm(q)
 
-        #projection
-        kv = self.kv_net(kv)
-        c = torch.cat([mem,kv],1)
-        key, value = c.chunk(2,-1)
-        query = self.q_net(q)
+        kv, query, key, value = self.projection(q,kv,mem)
         out, att_prob = self.attend(query, key, value, mask)
 
         out = query + out

@@ -237,8 +237,7 @@ class ComplexitySampler(Sampler):
                                                 eos_index, use_cache, **kwargs)
 
     def pre_encode(self, inp):
-        enc_out = self.model.encode_src(inp)
-        inp['enc_out'] = enc_out['enc_out']
+        self.model.encode_src(inp)
         cluster_logit = self.model.cluster_predict(inp)
         _, ind = cluster_logit.max(dim=-1)
         inp['tgt_cluster'] = ind
@@ -247,5 +246,15 @@ class ComplexitySampler(Sampler):
         super().expand_to_beamwidth(inp)
         inp['tgt_cluster'] = inp['tgt_cluster'][:,None].repeat(1,self.width).view(-1)
 
+
+class SentenceAwareSampler(Sampler):
+    def __init__(self, model, mode, max_len, temperature, width, eos_index, use_cache=True, **kwargs):
+        super(SentenceAwareSampler, self).__init__(model, mode, max_len, temperature, width,
+                                                eos_index, use_cache, **kwargs)
+
+    def expand_to_beamwidth(self, inp):
+        super().expand_to_beamwidth(inp)
+        size = inp['tgt_emb_hat'].size()
+        inp['tgt_emb_hat'] = inp['tgt_emb_hat'][:,None].repeat(1,self.width, 1).view(-1, *size[1:])
 
 

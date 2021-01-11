@@ -76,7 +76,7 @@ class MTArgument(BaseArgument):
         parser.add_argument("--loss-type", help="choice [plain, label-smoothing,"
                                                 " losses that will be implemented in the future]",
                             type=str)
-        parser.add_argument('--complexity-aware', action='store_true')
+        parser.add_argument('--model-type', type=str, default='plain')
         parser.add_argument('--prob-path', type=str)
         parser.add_argument("--model-checkpoint", help="transfer for finetune model", default="", type=str)
         if is_test:
@@ -88,7 +88,7 @@ class MTArgument(BaseArgument):
         return parser
 
     def load_files(self, data):
-        model_type = 'complexity' if data['complexity_aware'] else 'plain'
+        model_type = data['model_type']
         dirname = os.path.join('data', 'saved_model', data['dataset_name'], model_type)
         basename = '{}_{}'.format(data['model_size'], data['learning_rate'])
         data['train_src_path'] = files_including(data['src_path'], 'train')
@@ -187,7 +187,7 @@ class AccessArgument(BaseArgument):
 
         parser.add_argument("--dataset", type=str)
         parser.add_argument('--model-size', type=str, default='base')
-        parser.add_argument('--complexity-aware', action='store_true')
+        parser.add_argument('--model-type', type=str, default='plain')
         parser.add_argument('--saved-model-folder', type=str)
         parser.add_argument('--saved-model-ckpt', type=str)
         if is_test:
@@ -199,7 +199,8 @@ class AccessArgument(BaseArgument):
         return parser
 
     def load_files(self, data):
-        dirname = os.path.join('data', 'saved_model', 'access')
+        model_type = data['model_type']
+        dirname = os.path.join('data', 'saved_model', 'access', model_type)
         basename = '{}_{}'.format(data['model_size'], data['learning_rate'])
         data['savename'] = os.path.join(dirname, basename)
         data['padding_index'] = 1

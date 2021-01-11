@@ -15,13 +15,21 @@ def get_model(args):
           args.head_dim, args.n_enc_layers, args.n_dec_layers, args.dropout_rate,
           args.dropatt_rate, args.padding_index, args.shared_embedding, args.tie_embedding)
     if args.task in ('seq2seq', 'access'):
-        if args.complexity_aware:
+        if args.model_type == 'complexity-aware':
             model = ComplexityAwareModel(args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim,
                                          args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
                                          args.dropout_rate,
                                          args.dropatt_rate, args.padding_index, args.cutoffs, pre_lnorm=args.pre_lnorm,
                                          rel_att=args.relative_pos, shared_embedding=args.shared_embedding,
                                          tie_embedding=args.tie_embedding)
+
+        elif args.model_type == 'sentence-aware':
+            model = SentenceAwareModel(args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim,
+                                       args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
+                                       args.dropout_rate,
+                                       args.dropatt_rate, args.padding_index, pre_lnorm=args.pre_lnorm,
+                                       rel_att=args.relative_pos, shared_embedding=args.shared_embedding,
+                                       tie_embedding=args.tie_embedding)
 
         else:
             model = EncoderDecoderModel(args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim,
@@ -44,7 +52,7 @@ def get_model(args):
 
 def get_batchfier(args):
     if args.task == 'seq2seq':
-        if args.complexity_aware:
+        if args.model_type == 'complexity-aware':
             train_batchfier = ComplexityControlBatchfier(args.train_src_path, args.train_tgt_path, args.rare_index,
                                                          args.batch_size, args.seq_len,
                                                          padding_index=args.padding_index, device=args.device)
@@ -61,7 +69,7 @@ def get_batchfier(args):
                                              padding_index=args.padding_index, device=args.device)
         test_batchfier = MultitaskBatchfier(args.test_path, args.special_token_indice, args.batch_size, args.seq_len,
                                             padding_index=args.padding_index, device=args.device)
-    elif args.task =='access':
+    elif args.task == 'access':
         train_batchfier, test_batchfier = get_fair_batchfier(args.dataset, args.device)
     else:
         raise NotImplementedError
@@ -78,8 +86,10 @@ def get_loss(args, train_batchfier):
             loss = PlainLoss(train_batchfier.padding_index)
     else:
         raise NotImplementedError
-    if args.task =='seq2seq' and args.complexity_aware:
+    if args.model_type == 'complexity-aware':
         loss = ComplexityLoss(loss)
+    elif args.model_type == 'sentence-aware':
+        loss = SentenceAwareLoss(loss)
     return loss
 
 

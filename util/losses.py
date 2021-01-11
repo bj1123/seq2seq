@@ -83,6 +83,34 @@ class ComplexityLoss(BaseLoss):
         super().clear_loss()
 
 
+class SentenceAwareLoss(BaseLoss):
+    def __init__(self, main_loss:BaseLoss, auxiliary_lambda=100):
+        super(SentenceAwareLoss, self).__init__()
+        self.main_loss = main_loss
+        self.aux_lambda = auxiliary_lambda
+        self.criteria = torch.nn.MSELoss()
+
+    def forward(self, out, inp):
+        main_loss = self.main_loss(out, inp)
+        y_hat, y = out['tgt_emb_hat'], out['tgt_emb']
+        aux_loss = self.criteria(y_hat, y)
+        self.cum_loss += aux_loss
+        return main_loss + self.aux_lambda * aux_loss
+
+    def get_description(self, step):
+        mse_loss = self.cum_loss
+        tok_loss = self.main_loss.cum_loss
+        desc = f"total loss: {(tok_loss + self.aux_lambda * mse_loss)/step:.3f}" \
+               f" token loss : {tok_loss / step:.3f}," \
+               f" mse loss : {mse_loss / step:.3f}," \
+               f" token ppl : {math.exp(tok_loss / step):.3f} acc : {self.cum_acc / step} "
+        return desc
+
+    def clear_loss(self):
+        self.main_loss.clear_loss()
+        super().clear_loss()
+
+
 class LabelSmoothingLoss(BaseLoss):
     def __init__(self, vocab_size, smoothing=0.1, ignore_index=-1, seq2seq=True, device='cuda'):
         super(LabelSmoothingLoss, self).__init__()
