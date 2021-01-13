@@ -438,17 +438,22 @@ class SentenceAwareModel(EncoderDecoderModel):
 
     def forward(self, inp):
         src, tgt, src_len, tgt_len = inp['src'], inp['tgt'], inp['src_len'], inp['tgt_len']
-        is_train = False if 'enc_out' in inp else True
+        is_sampling = not self.training and 'enc_out' in inp
         enc_out = inp['enc_out'] if 'enc_out' in inp else None  # if src is already encoded. used in decoding phase
         tgt_emb_hat = inp['tgt_emb_hat'] if 'tgt_emb_hat' in inp else None
         tgt_mem = inp['tgt_mem'] if 'tgt_mem' in inp else None
         out = {}
         if enc_out is None:
             enc_out, tgt_emb_hat = self.encode_src(inp)
-        if is_train:
-            tgt_emb = self.encode_tgt(inp)
-        else:
+        if is_sampling:
             tgt_emb = tgt_emb_hat
+        else:
+            tgt_emb_out = self.encode_tgt(inp)
+            out['tgt_emb'] = tgt_emb_out
+            if self.training:
+                tgt_emb = tgt_emb_out
+            else:
+                tgt_emb = tgt_emb_hat
         tgt_mask = self.decoder.get_mask(tgt_mem, tgt_len)
         tgt_to_src_mask = self.decoder.tgt_to_src_mask(src_len, tgt_len)
         tgt_emb_extended = tgt_emb.detach().unsqueeze(1).repeat(1, tgt.size(1), 1)
@@ -457,7 +462,6 @@ class SentenceAwareModel(EncoderDecoderModel):
         logits = self.final(dec_out)
         out['logits'] = logits
         out['tgt_mem'] = new_tgt_mem
-        out['tgt_emb'] = tgt_emb
         out['tgt_emb_hat'] = tgt_emb_hat
         out['dec_self_att'] = dec_self_att
         out['inter_att'] = inter_att
