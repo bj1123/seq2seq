@@ -84,11 +84,11 @@ class ComplexityLoss(BaseLoss):
 
 
 class SentenceAwareLoss(BaseLoss):
-    def __init__(self, main_loss:BaseLoss, auxiliary_lambda=100):
+    def __init__(self, main_loss:BaseLoss, auxiliary_lambda=1):
         super(SentenceAwareLoss, self).__init__()
         self.main_loss = main_loss
         self.aux_lambda = auxiliary_lambda
-        self.criteria = torch.nn.MSELoss()
+        self.criteria = torch.nn.L1Loss()
 
     def forward(self, out, inp):
         main_loss = self.main_loss(out, inp)

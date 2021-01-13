@@ -42,7 +42,7 @@ class Initializer:
                 self.init_weight(m.weight)
 
         elif classname.find('LayerNorm') != -1:
-            if hasattr(m, 'weight'):
+            if hasattr(m, 'weight') and m.weight is not None:
                 nn.init.normal_(m.weight, 1.0, self.value)
             if hasattr(m, 'bias') and m.bias is not None:
                 self.init_bias(m.bias)

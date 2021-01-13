@@ -413,10 +413,12 @@ class SentenceAwareModel(EncoderDecoderModel):
                                                  dropatt_rate, padding_index, pre_lnorm, same_lengths,
                                                  rel_att, shared_embedding, tie_embedding, **kwargs)
         self.tgt_emb_prediction = nn.Sequential(nn.Linear(hidden_dim, hidden_dim * 4), nn.ReLU(),
-                                                nn.Linear(hidden_dim * 4, hidden_dim))
+                                                nn.Linear(hidden_dim * 4, hidden_dim),
+                                                nn.LayerNorm(hidden_dim, elementwise_affine=False))
         self.tgt_encoder = EncoderNetwork(hidden_dim, projection_dim, n_heads, head_dim, enc_num_layers, dropout_rate,
                                           dropatt_rate, pre_lnorm, same_lengths, rel_att,
                                           vocab_size=vocab_size, seq_len=seq_len, padding_index=padding_index)
+        self.tgt_emb_norm = nn.LayerNorm(hidden_dim, elementwise_affine=False)
 
     def build_decoder_network(self, decoder_type=SentenceAwareDecoderBlock):
         return super().build_decoder_network(block_type=decoder_type)
@@ -431,7 +433,7 @@ class SentenceAwareModel(EncoderDecoderModel):
         tgt, tgt_len = inp['tgt'], inp['tgt_len']
         tgt_mask = self.tgt_encoder.get_mask(None, tgt_len)
         enc_out, _, enc_self_atts = self.tgt_encoder(tgt, None, tgt_mask)
-        enc_out = enc_out[:, 0]
+        enc_out = self.tgt_emb_norm(enc_out[:, 0])
         return enc_out
 
     def forward(self, inp):

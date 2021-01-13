@@ -3,7 +3,7 @@
 export PYTHONPATH="${PYTHONPATH}:../"
 echo $PYTHONPATH
 
-CKPT=epoch_9
+CKPT=epoch_10
 MODEL=sentence-aware
 LR=0.000111
 

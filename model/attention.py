@@ -68,14 +68,7 @@ class MultiheadAtt(AttBase):
         query = self.q_net(q)
         return kv, query, key, value
 
-    def forward(self, q, kv, mem, mask):
-        """
-        :param q:
-        :param kv:
-        :param mem: [key_mem, value_mem]
-        :param mask:
-        :return:
-        """
+    def before_add(self, q, kv, mem, mask):
         if kv is None:
             return q, None
         if mem is None:
@@ -85,10 +78,35 @@ class MultiheadAtt(AttBase):
             kv = self.layer_norm(kv)
             q = self.layer_norm(q)
 
-        kv, query, key, value = self.projection(q,kv,mem)
+        kv, query, key, value = self.projection(q,kv, mem)
         out, att_prob = self.attend(query, key, value, mask)
+        return query, out, kv, att_prob
 
+    def forward(self, q, kv, mem, mask):
+        """
+        :param q:
+        :param kv:
+        :param mem: [key_mem, value_mem]
+        :param mask:
+        :return:
+        """
+        query, out, kv, att_prob = self.before_add(q, kv, mem, mask)
         out = query + out
+        if not self.pre_lnorm:
+            out = self.layer_norm(out)
+        return out, kv, att_prob
+
+
+class SentenceAwareAtt(MultiheadAtt):
+    def __init__(self, hidden_dim:int, n_head:int, head_dim:int,
+                 dropout_rate:float, dropatt_rate:float=0.0, pre_lnorm=False):
+        super(SentenceAwareAtt, self).__init__(hidden_dim, n_head, head_dim, dropout_rate, dropatt_rate, pre_lnorm)
+        self.proj = nn.Sequential(nn.Linear(hidden_dim, hidden_dim), nn.ReLU())
+
+    def forward(self, q, kv, mem, mask):
+        query, out, kv, att_prob = self.before_add(q, kv, mem, mask)
+        out = out - query
+        out = self.proj(out)
         if not self.pre_lnorm:
             out = self.layer_norm(out)
         return out, kv, att_prob
