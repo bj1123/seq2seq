@@ -12,11 +12,14 @@ class DSReformatter:
     def __init__(self, dir_path, target_format='pickle'):
         self.dir_path = dir_path
         self.target_format = target_format
-        self.filenames = ['wikilarge.test', 'wikilarge.train', 'wikilarge.valid']
+        self.filenames = get_files(dir_path)
+        self.targetnames = ['test', 'train', 'valid']
 
     def pickle_reformat(self, filename):
         src_name = filename + '.complex'
         tgt_name = filename + '.simple'
+        src_name = list(filter(lambda x: src_name in x, self.filenames))[0]
+        tgt_name = list(filter(lambda x: tgt_name in x, self.filenames))[0]
         out_name = filename + '.pkl'
         src_path = os.path.join(self.dir_path,src_name)
         tgt_path = os.path.join(self.dir_path,tgt_name)
@@ -38,7 +41,7 @@ class DSReformatter:
         if is_processed(self.dir_path):
             return
         if self.target_format == 'pickle':
-            for fn in self.filenames:
+            for fn in self.targetnames:
                 self.pickle_reformat(fn)
         else:
             raise NotImplementedError
