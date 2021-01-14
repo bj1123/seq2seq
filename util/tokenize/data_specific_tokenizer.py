@@ -1,6 +1,6 @@
 from util.tokenize.base_tokenizer import *
 import pandas as pd
-
+import re
 
 class MTSpaceTokenizer(SpaceTokenizer):
     def __init__(self, dir_path, prefix, vocab_size, use_sos=True, use_eos=True, **kwargs):
@@ -45,7 +45,7 @@ class WikiLargeTokenizer(HFTokenizer):
 class MultiTaskTokenizer(HFTokenizer):
     def __init__(self, directory_path, prefix, vocab_size=30000, tokenizer_class='wp',
                  morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser, tokens_to_add=None,
-                 use_imap=True, split_jamo=False, **kwargs):
+                 use_imap=True, split_jamo=False, use_control_token=True, **kwargs):
         from util.tokenize.data_reformatter import MultitaskReformatter
         super(MultiTaskTokenizer, self).__init__(directory_path, prefix, vocab_size,
                                                  tokenizer_class=tokenizer_class,
@@ -56,6 +56,20 @@ class MultiTaskTokenizer(HFTokenizer):
                                                  split_jamo=split_jamo,
                                                  **kwargs)
         self.task_map = MultitaskReformatter.tasks_map
+        self.use_control_token = use_control_token
+        if self.use_control_token:
+            self.control_tokens = set()
+
+    @staticmethod
+    def read_pickle(file_path):
+        res = pd.read_pickle(file_path)
+        src = res['src'].tolist()
+        tgt = res['tgt'].tolist()
+        return src, tgt, MultiTaskTokenizer.is_simplification(file_path)
+
+    @staticmethod
+    def is_simplification(filepath):
+        return 'simplification' in os.path.basename(os.path.dirname(p))
 
     @staticmethod
     def is_korean(texts):
@@ -73,11 +87,20 @@ class MultiTaskTokenizer(HFTokenizer):
         return len(texts)  # criteria: n_sentences
         # return sum([len(i.split()) for i in texts])  # criteria: n_words
 
+    @staticmethod
+    def get_control_tokens(text):
+        splited = text.split()
+        return splited[:3]
+
+    def update_control_tokens(self, text):
+        tokens = self.get_control_tokens(text)
+        self.control_tokens.update(tokens)
+
     def _read_file(self, file_path, **kwargs):
         ratio = kwargs.get('ratio')  # en / ko
         if os.path.splitext(file_path)[-1] == '.pkl':
             res = []
-            src, tgt = self.read_pickle(file_path)
+            src, tgt, is_simplification = self.read_pickle(file_path)
             for i in [src, tgt]:
                 if i[0]:
                     iskorean = self.is_korean(src)
@@ -115,7 +138,9 @@ class MultiTaskTokenizer(HFTokenizer):
         files = self._get_files(file_path)
         for file in files:
             if os.path.splitext(file)[-1] == '.pkl':
-                src, tgt = self.read_pickle(file)
+                src, tgt, is_simplification = self.read_pickle(file)
+                if is_simplification and self.use_control_token:
+                    [self.update_control_tokens(i) for i in src]
                 for i in [src, tgt]:
                     if self.is_korean(i):
                         ko += self.count_words(i)
@@ -127,5 +152,7 @@ class MultiTaskTokenizer(HFTokenizer):
         full_path = os.path.join(self.directory_path, file_path)
         ratio = self.language_ratio(full_path)
         new_kwargs = dict(kwargs, ratio=ratio)
+        if self.use_control_token:
+            self.tokens_to_add += self.control_tokens
         enc = super()._learn_tokenizer(file_path, **new_kwargs)
         return enc
