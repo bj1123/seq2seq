@@ -216,12 +216,13 @@ class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
     def _load_tokenizer(self, directory_path, encoder_filename):
         def check_existence(inp):
             res = [os.path.exists(i) for i in inp]
-            return sum(res) == len(res)
+            res = sum(res) == len(res)
+            print(f'check {inp}\nresults : {res}')
+            return res
 
         tokenizer = self._initialize_tokenizer()
         is_exists = False
         base_name = os.path.join(directory_path, encoder_filename)
-        print(base_name)
         if self.tokenizer_class == 'wp':
             inp = (base_name + '-vocab.txt',)
         elif self.tokenizer_class == 'bpe':

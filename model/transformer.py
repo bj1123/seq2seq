@@ -215,10 +215,12 @@ class EncoderDecoderModel(nn.Module):
                                       vocab_size=vocab_size, seq_len=seq_len, padding_index=padding_index)
         self.tie_embedding = tie_embedding
         self.shared_embedding = shared_embedding
+        self.padding_index = padding_index
         self.vocab_size = vocab_size
         self.hidden_dim = hidden_dim
         self.projection_dim = projection_dim
         self.n_heads = n_heads
+        self.seq_len = seq_len
         self.head_dim = head_dim
         self.dec_num_layers = dec_num_layers
         self.dropout_rate = dropout_rate

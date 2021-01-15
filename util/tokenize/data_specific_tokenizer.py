@@ -69,7 +69,7 @@ class MultiTaskTokenizer(HFTokenizer):
 
     @staticmethod
     def is_simplification(filepath):
-        return 'simplification' in os.path.basename(os.path.dirname(p))
+        return 'simplification' in os.path.basename(os.path.dirname(filepath))
 
     @staticmethod
     def is_korean(texts):
@@ -114,25 +114,41 @@ class MultiTaskTokenizer(HFTokenizer):
         else:
             return []
 
+    def append_special_tokens(self, texts, base_dir):
+        indice = []
+        lang = '[KOREAN]' if self.is_korean(texts) else '[ENGLISH]'
+        indice.append(self.tokenizer.token_to_id(lang))
+        task = self.task_map[base_dir]
+        indice.append(self.tokenizer.token_to_id(task))
+        return lang, indice
+
+    def access_src_encode(self, indice, text):
+        control_tokens, raw_texts = text.split()[:3], ' '.join(text.split()[3:])
+        ct_indice = [self.tokenizer.token_to_id(i) for i in control_tokens]
+        assert None not in ct_indice
+        return indice + ct_indice + self.tokenizer.encode(raw_texts.rstrip()).ids
+
     def _encode_file(self, inp, out, **kwargs):
         if os.path.splitext(inp)[-1] == '.pkl':
             base_dir = os.path.basename(os.path.dirname(inp))
-            task = self.task_map[base_dir]
-            task_ind = self.tokenizer.token_to_id(task)
-            src, tgt = self.read_pickle(inp)
-            src_lang = '[KOREAN]' if self.is_korean(src) else '[ENGLISH]'
-            src_lang_ind = self.tokenizer.token_to_id(src_lang)
-            tgt_lang = '[KOREAN]' if self.is_korean(tgt) else '[ENGLISH]'
-            tgt_lang_ind = self.tokenizer.token_to_id(tgt_lang)
-            src_encoded = [[src_lang_ind, task_ind] + self.tokenizer.encode(i.rstrip()).ids for i in src]
-            tgt_encoded = [[tgt_lang_ind, task_ind] + self.tokenizer.encode(i.rstrip()).ids for i in tgt]
-            target_language = [src_lang] * len(tgt)
-            source_language = [tgt_lang] * len(tgt)
-            df = pd.DataFrame({'src': src_encoded, 'tgt': tgt_encoded, 'target_language': target_language,
+            src, tgt, _ = self.read_pickle(inp)
+            encoded = []
+            langs = []
+            for idx, texts in enumerate([src, tgt]):
+                lang, indice = self.append_special_tokens(texts, base_dir)
+                if 'simplification' in base_dir and idx ==0:
+                    i_encoded = [self.access_src_encode(indice, i) for i in texts]
+                else:
+                    i_encoded = [indice + self.tokenizer.encode(i.rstrip()).ids for i in texts]
+                langs.append(lang)
+                encoded.append(i_encoded)
+            target_language = [langs[1]] * len(tgt)
+            source_language = [langs[0]] * len(tgt)
+            df = pd.DataFrame({'src': encoded[0], 'tgt': encoded[1], 'target_language': target_language,
                                'source_language': source_language})
             return df
 
-    def language_ratio(self, file_path):
+    def pre_compute(self, file_path):
         ko = 0
         en = 0
         files = self._get_files(file_path)
@@ -150,9 +166,9 @@ class MultiTaskTokenizer(HFTokenizer):
 
     def _learn_tokenizer(self, file_path, **kwargs):
         full_path = os.path.join(self.directory_path, file_path)
-        ratio = self.language_ratio(full_path)
+        ratio = self.pre_compute(full_path)
         new_kwargs = dict(kwargs, ratio=ratio)
         if self.use_control_token:
-            self.tokens_to_add += self.control_tokens
+            self.tokens_to_add += (list(self.control_tokens))
         enc = super()._learn_tokenizer(file_path, **new_kwargs)
         return enc

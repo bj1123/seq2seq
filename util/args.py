@@ -147,6 +147,7 @@ class MultitaskArgument(BaseArgument):
         parser.add_argument('--saved-model-folder', type=str)
         parser.add_argument('--saved-model-ckpt', type=str)
         parser.add_argument('--model-size', type=str, default='base')
+        parser.add_argument('--model-type', type=str, default='plain')
         parser.add_argument("--loss-type", help="choice [plain, label-smoothing,"
                                                 " losses that will be implemented in the future]",
                             type=str)

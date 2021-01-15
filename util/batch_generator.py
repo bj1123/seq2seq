@@ -273,7 +273,7 @@ class MultitaskBatchfier(BaseBatchfier):
         return {'src': src_texts.to(self.device),
                 'src_len': src_lens.to(self.device),
                 'tgt': tgt_texts[:, :-1].to(self.device),
-                'tgt_len': tgt_lens.to(self.device),
+                'tgt_len': tgt_lens.to(self.device) - 1,
                 'label': tgt_texts[:, 1:].to(self.device),
                 'tgt_language': tgt_languages.to(self.device)}
 

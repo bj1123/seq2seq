@@ -18,11 +18,9 @@ class DSReformatter:
     def pickle_reformat(self, filename):
         src_name = filename + '.complex'
         tgt_name = filename + '.simple'
-        src_name = list(filter(lambda x: src_name in x, self.filenames))[0]
-        tgt_name = list(filter(lambda x: tgt_name in x, self.filenames))[0]
+        src_path = list(filter(lambda x: src_name in x, self.filenames))[0]
+        tgt_path = list(filter(lambda x: tgt_name in x, self.filenames))[0]
         out_name = filename + '.pkl'
-        src_path = os.path.join(self.dir_path,src_name)
-        tgt_path = os.path.join(self.dir_path,tgt_name)
         out_path = os.path.join(self.dir_path,out_name)
         if not os.path.exists(out_path):
             with open(src_path, 'r', encoding='utf-8') as f:
@@ -34,8 +32,8 @@ class DSReformatter:
 
         if not os.path.exists(os.path.join(self.dir_path, 'raw')):
             os.makedirs(os.path.join(self.dir_path, 'raw'))
-        shutil.move(src_path, os.path.join(self.dir_path, 'raw', filename + '.complex'))
-        shutil.move(tgt_path, os.path.join(self.dir_path, 'raw', filename + '.simple'))
+        shutil.move(src_path, os.path.join(self.dir_path, 'raw', os.path.basename(src_path)))
+        shutil.move(tgt_path, os.path.join(self.dir_path, 'raw',  os.path.basename(tgt_path)))
 
     def start(self):
         if is_processed(self.dir_path):
