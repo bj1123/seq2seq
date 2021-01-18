@@ -79,18 +79,18 @@ class DecayLearningRate(pl.callbacks.Callback):
             self.init_lrs.append(group)
 
     def on_before_zero_grad(self, trainer, pl_module, optimizer):
+        self.step+=1
         if self.step < self.warmup_steps:
-            return float(self.step) / float(max(1, self.warmup_steps))
-        lrmbda = max(0.0, float(self.t_total - self.step) / float(max(1.0, self.t_total - self.warmup_steps)))
+            lr_lambda = float(self.step) / float(max(1, self.warmup_steps))
+        else:
+            lr_lambda = max(0.0, float(self.t_total - self.step) / float(max(1.0, self.t_total - self.warmup_steps)))
         if self.decay_on_valid:
-            lrmbda *= self.decay_coef
+            lr_lambda *= self.decay_coef
 
         for opt_idx, optimizer in enumerate(trainer.optimizers):
             init_lr_group = self.init_lrs[opt_idx]
             new_lr_group = []
             for p_idx, param_group in enumerate(optimizer.param_groups):
-                new_lr = lrmbda * init_lr_group[p_idx]
+                new_lr = lr_lambda * init_lr_group[p_idx]
                 new_lr_group.append(new_lr)
                 param_group['lr'] = new_lr
-            self.init_lrs[opt_idx] = new_lr_group
-        self.step +=1

@@ -6,6 +6,7 @@ import torch.nn as nn
 import numpy as np
 import math
 from abc import ABC
+import pytorch_lightning as pl
 
 
 class BaseLoss(_Loss, ABC):
