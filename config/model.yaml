@@ -7,7 +7,7 @@ base:
   head_dim: 64
   n_enc_layers: 6
   n_dec_layers: 6
-  dropout_rate: 0.2
+  dropout_rate: 0.1
   dropatt_rate: 0.0
   pre_lnorm: False
 

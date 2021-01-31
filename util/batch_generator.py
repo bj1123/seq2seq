@@ -281,6 +281,7 @@ class MultitaskBatchfier(BaseBatchfier):
 class MultitaskInferBatchfier(BaseBatchfier): # batchfy from raw text
     def __init__(self, file_path, special_token_indice, tokenizer, batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 4096,
                  padding_index=30000, device='cuda' ):
+        print(tokenizer)
         super(MultitaskInferBatchfier, self).__init__(batch_size, seq_len, minlen, maxlen,
                                                       None, padding_index, False, device)
         self.filepath = file_path
@@ -305,9 +306,13 @@ class MultitaskInferBatchfier(BaseBatchfier): # batchfy from raw text
         tokenizer = self.tokenizer
         for text in texts:
             prefix = [tokenizer.token_to_id('[KOREAN]'), tokenizer.token_to_id('[SIMPLIFICATION]')]
+            access_control_token = [tokenizer.token_to_id('<WORDRANKRATIO_0.5>'),
+                                    tokenizer.token_to_id('<LEVENSHTEIN_0.5>'),
+                                    tokenizer.token_to_id('<LENGTHRATIO_1.0>')]
             temp = [tokenizer.token_to_id('[KOREAN]'), tokenizer.token_to_id('[SIMPLIFICATION]')]
-            lang = self.special_token_dic['language']['[ENGLISH]']
-            yield prefix + text, len(text) + 2, temp + [tokenizer.token_to_id('[SOS]')], 3, lang
+            lang = self.special_token_dic['language']['[KOREAN]']
+            yield prefix + access_control_token + text, len(text) + len(prefix + access_control_token),\
+                  temp + [tokenizer.token_to_id('[SOS]')], 3, lang
 
     def collate_fn(self, batch):
         src_texts = [torch.Tensor(item[0]).long() for item in batch]

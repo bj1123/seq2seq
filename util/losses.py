@@ -7,6 +7,7 @@ import numpy as np
 import math
 from abc import ABC
 import pytorch_lightning as pl
+from util.metrics import *
 
 
 class BaseLoss(_Loss, ABC):
@@ -14,10 +15,18 @@ class BaseLoss(_Loss, ABC):
         super(BaseLoss, self).__init__()
         self.cum_loss = 0
         self.cum_acc = 0
+        self.metrics = {}
 
     def clear_loss(self):
         self.cum_loss = 0
         self.cum_acc = 0
+
+    def to_log(self, out, inp):  # pytorch_lightning
+        d = {}
+        for name, l in self.metrics.items():
+            res = l(out, inp)
+            d[name] = res
+        return d
 
 
 class PlainWrapper(BaseLoss):
@@ -37,8 +46,8 @@ class PlainLoss(BaseLoss):
         super(PlainLoss, self).__init__()
         self.padding_idx = padding_idx
         self.seq2seq = seq2seq
-        self.criteria = torch.nn.CrossEntropyLoss()
         self.criteria = torch.nn.CrossEntropyLoss(ignore_index=padding_idx)
+        self.metrics = {'perplexity': Perplexity(padding_idx)}
 
     def forward(self, out, inp):
         y_hat, y = out['logits'], inp['label']
@@ -50,7 +59,7 @@ class PlainLoss(BaseLoss):
         self.cum_loss +=l
         return l
 
-    def get_description(self, step):
+    def get_description(self, step):  # for pure pytorch
         tok_loss = self.cum_loss
         desc = " token loss : %f, token ppl : %f, acc : %f " % (
             tok_loss / step, math.exp(tok_loss / step), self.cum_acc / step)
@@ -93,10 +102,17 @@ class SentenceAwareLoss(BaseLoss):
 
     def forward(self, out, inp):
         main_loss = self.main_loss(out, inp)
+        # return main_loss
         y_hat, y = out['tgt_emb_hat'], out['tgt_emb']
         aux_loss = self.criteria(y_hat, y)
         self.cum_loss += aux_loss
         return main_loss + self.aux_lambda * aux_loss
+
+    # def get_description(self, step):
+    #     tok_loss = self.main_loss.cum_loss
+    #     desc = f" token loss : {tok_loss / step:.3f}," \
+    #            f" token ppl : {math.exp(tok_loss / step):.3f} acc : {self.cum_acc / step} "
+    #     return desc
 
     def get_description(self, step):
         mse_loss = self.cum_loss
@@ -124,6 +140,7 @@ class LabelSmoothingLoss(BaseLoss):
         self.register_buffer('one_hot', one_hot.unsqueeze(0))
         self.vocab_Size = vocab_size
         self.ignore_index = ignore_index
+        self.metrics = {'perplexity': Perplexity(ignore_index)}
 
     def forward(self, out, inp):
         y_hat, y = out['logits'], inp['label']

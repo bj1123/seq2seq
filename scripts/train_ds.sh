@@ -10,6 +10,6 @@ CUDA_VISIBLE_DEVICES=0 python main.py \
 --prob-path ../data/data-simplification/$DATASET/splited/wp_tgt_10000-probs.json \
 --dataset-name $DATASET \
 --loss-type plain \
---model-type sentence-aware \
+--model-type plain \
 --task seq2seq \
 --model-size base;

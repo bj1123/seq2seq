@@ -425,9 +425,15 @@ class SentenceAwareModel(EncoderDecoderModel):
     def build_decoder_network(self, decoder_type=SentenceAwareDecoderBlock):
         return super().build_decoder_network(block_type=decoder_type)
 
+    def stochastic_tgt_emb(self, tgt_emb_out):
+        avg, dev = tgt_emb_out.chunk(2, dim=-1)
+        res = avg + torch.rand_like(dev) * dev
+        return res
+
     def encode_src(self, inp):
         enc_out = super().encode_src(inp)
         tgt_emb_hat = self.tgt_emb_prediction(enc_out[:, 0])
+        # tgt_emb_hat = self.stochastic_tgt_emb(self.tgt_emb_prediction(enc_out[:, 0]))
         inp['tgt_emb_hat'] = tgt_emb_hat
         return enc_out, tgt_emb_hat
 
