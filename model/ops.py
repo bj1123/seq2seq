@@ -4,6 +4,18 @@ import torch.optim as optim
 import math
 
 
+def pad_input(x, pad_n):
+    """
+    :param x: input size [bs, lens, dim]
+    :param pad_n:
+    :return:
+    """
+    bs, lens, dim = x.size()
+    left = torch.zeros((bs,pad_n,dim), dtype=x.dtype, device=x.device)
+    right = torch.zeros((bs,pad_n,dim), dtype=x.dtype, device=x.device)
+    return torch.cat([left, x, right], 1)
+
+
 def hard_sigm(x):
     temp = torch.div(torch.add(x, 1), 2.0)
     output = torch.clamp(temp, min=0, max=1)

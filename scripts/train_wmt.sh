@@ -10,5 +10,4 @@ CUDA_VISIBLE_DEVICES=0 python main.py \
  --loss-type plain \
  --task seq2seq \
  --dataset-name $DATASET \
- --model-type sentence-aware \
  --model-size base;

@@ -25,6 +25,12 @@ class Initializer:
             if hasattr(m, 'bias') and m.bias is not None:
                 self.init_bias(m.bias)
 
+        elif classname.find('Conv2d') != -1:
+            if hasattr(m, 'weight') and m.weight is not None:
+                self.init_weight(m.weight)
+            if hasattr(m, 'bias') and m.bias is not None:
+                self.init_bias(m.bias)
+
         elif classname.find('MultiheadAtt') != -1:
             if hasattr(m, 'vec_u'):
                 self.init_weight(m.vec_u)

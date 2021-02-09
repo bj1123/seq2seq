@@ -3,9 +3,9 @@
 export PYTHONPATH="${PYTHONPATH}:../"
 echo $PYTHONPATH
 
-CKPT=epoch_10
+CKPT=epoch_22
 MODEL=sentence-aware
-LR=0.000111
+LR=0.000109
 
 CUDA_VISIBLE_DEVICES=0 python sample.py \
   --is-sampling \
