@@ -181,3 +181,45 @@ class RelMultiheadAtt(AttBase):
         if not self.pre_lnorm:
             out = self.layer_norm(out)
         return out, kv, att_prob
+
+
+class GraphRelMultiheadAtt(AttBase):
+    def __init__(self, hidden_dim:int, n_head:int, head_dim:int,
+                 dropout_rate:float,
+                 dropatt_rate:float=0.0, pre_lnorm=False, maxlen=512, relative_attention_num_buckets=128,
+                 is_decoder=False):
+        super(GraphRelMultiheadAtt, self).__init__(hidden_dim, n_head, head_dim,
+                                                   dropout_rate, dropatt_rate, pre_lnorm)
+        self.is_decoder = is_decoder
+        self.relative_attention_num_buckets = relative_attention_num_buckets
+        self.maxlen = maxlen
+
+    @staticmethod
+    def _relative_position_bucket(relative_position, bidirectional=True, num_buckets=32, max_distance=128):
+        relative_buckets = 0
+        if bidirectional:
+            relative_position = torch.abs(relative_position)
+            masks = torch.full(relative_position.size(), False, relative_position=temp.device)
+        else:
+            relative_position = -torch.min(relative_position, torch.ones_like(relative_position))
+            masks = relative_position == -1
+        # now relative_position is in the range [0, inf)
+
+        # half of the buckets are for exact increments in positions
+        max_exact = num_buckets // 2
+        is_small = relative_position < max_exact
+
+        # The other half of the buckets are for logarithmically bigger bins in positions up to max_distance
+        relative_postion_if_large = max_exact + (
+                torch.log(relative_position.float() / max_exact)
+                / math.log(max_distance / max_exact)
+                * (num_buckets - max_exact)
+        ).to(torch.long)
+        relative_postion_if_large = torch.min(
+            relative_postion_if_large, torch.full_like(relative_postion_if_large, num_buckets - 1)
+        )
+
+        relative_buckets += torch.where(is_small, relative_position, relative_postion_if_large)
+        dist = 1 / (relative_buckets + 1)
+        dist = dist.masked_fill(masks, 0)
+        return dist
