@@ -42,6 +42,19 @@ class BaseArgument(ABC):
         self.load_files(data)
         self.__dict__ = data
 
+    def get_common_args(self):
+        parser = self.parents_args
+        parser.add_argument('--saved-model-folder', type=str)
+        parser.add_argument('--saved-model-ckpt', type=str)
+        parser.add_argument('--model-size', type=str, default='base')
+        parser.add_argument('--model-type', type=str, default='plain')
+        parser.add_argument("--loss-type", help="choice [plain, label-smoothing,"
+                                                " losses that will be implemented in the future]",
+                            type=str)
+        parser.add_argument('--positional-encoding', type=str, default='absolute')
+
+        return parser
+
     @abstractmethod
     def load_files(self, data):
         pass
@@ -66,17 +79,10 @@ class MTArgument(BaseArgument):
         return res
 
     def get_args(self, is_test=False):
-        parser = self.parents_args
+        parser = self.get_common_args()
         parser.add_argument("--src-path", type=str)
         parser.add_argument("--tgt-path", type=str)
         parser.add_argument("--dataset-name", type=str)
-        parser.add_argument('--saved-model-folder', type=str)
-        parser.add_argument('--saved-model-ckpt', type=str)
-        parser.add_argument('--model-size', type=str, default='base')
-        parser.add_argument("--loss-type", help="choice [plain, label-smoothing,"
-                                                " losses that will be implemented in the future]",
-                            type=str)
-        parser.add_argument('--model-type', type=str, default='plain')
         parser.add_argument('--prob-path', type=str)
         parser.add_argument("--model-checkpoint", help="transfer for finetune model", default="", type=str)
         if is_test:
@@ -141,17 +147,10 @@ class MultitaskArgument(BaseArgument):
         return indice
 
     def get_args(self, is_test=False):
-        parser = self.parents_args
+        parser = self.get_common_args()
         parser.add_argument("--dir-path", type=str)
         parser.add_argument("--tokenizer-prefix", type=str)
         parser.add_argument("--tokenizer-class", type=str, default='wp')
-        parser.add_argument('--saved-model-folder', type=str)
-        parser.add_argument('--saved-model-ckpt', type=str)
-        parser.add_argument('--model-size', type=str, default='base')
-        parser.add_argument('--model-type', type=str, default='plain')
-        parser.add_argument("--loss-type", help="choice [plain, label-smoothing,"
-                                                " losses that will be implemented in the future]",
-                            type=str)
         parser.add_argument("--model-checkpoint", help="transfer for finetune model", default="", type=str)
         if is_test:
             parser.add_argument('--target-text-path', type=str)
@@ -182,16 +181,12 @@ class AccessArgument(BaseArgument):
         super(AccessArgument, self).__init__(parents_args, path, is_train)
 
     def get_args(self, is_test=False):
-        parser = self.parents_args
+        parser = self.get_common_args()
         parser.add_argument("--loss-type", help="choice [plain]"
                                                 " losses that will be implemented in the future]",
                             type=str)
 
         parser.add_argument("--dataset", type=str)
-        parser.add_argument('--model-size', type=str, default='base')
-        parser.add_argument('--model-type', type=str, default='plain')
-        parser.add_argument('--saved-model-folder', type=str)
-        parser.add_argument('--saved-model-ckpt', type=str)
         if is_test:
             parser.add_argument('--sample-save-path', type=str)
             parser.add_argument('--sampling-mode', type=str)

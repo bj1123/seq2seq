@@ -1,6 +1,8 @@
 import torch
 from torch import nn
-from abc import ABC
+from abc import ABC, abstractmethod
+import math
+from torch.nn import functional as F
 
 
 class AttBase(nn.Module, ABC):
@@ -24,42 +26,42 @@ class AttBase(nn.Module, ABC):
 
         self.pre_lnorm = pre_lnorm
 
-
-class MultiheadAtt(AttBase):
-    def __init__(self, hidden_dim:int, n_head:int, head_dim:int,
-                 dropout_rate:float, dropatt_rate:float=0.0, pre_lnorm=False):
-        super(MultiheadAtt, self).__init__(hidden_dim, n_head, head_dim, dropout_rate, dropatt_rate, pre_lnorm)
+    @staticmethod
+    def mask(score, mask):
+        encoder_mask = mask.bool()
+        score.masked_fill_(encoder_mask.unsqueeze(-1), -6e4)
+        return score
 
     def attend(self, query, key, value, mask):
+        bs, qs = query.size()[:2]
+        score = self.compute_score(query, key)
+        score = self.mask(score, mask)
+        attended = self.linear_combine(score, value)
+
+        out = self.o_net(attended.contiguous().view(bs, qs, -1))
+        out = self.dropout(out)
+        return out, score
+
+    def compute_score(self, query, key):
         bs, qs, hs = query.size()
         ks = key.size(1)
-        ms = ks-qs
 
         # print(query.size(),key.size(),value.size(),rel.size())
         # reshaping
-        k = key.view(bs,ks,self.n_head,self.head_dim)
-        v = value.view(bs,ks,self.n_head,self.head_dim)
-        q = query.view(bs,qs,self.n_head,self.head_dim)
+        k = key.view(bs, ks, self.n_head, self.head_dim)
+        q = query.view(bs, qs, self.n_head, self.head_dim)
 
         att_score = torch.einsum('bqnd,bknd->bqkn', q, k)
         att_score.mul_(self.scale)
+        return att_score
 
-        # attend
-        if mask is None:
-            print('mask is none')
-            mask = torch.ones((qs,ks)).byte()
-            mask = mask.triu(1+ms) ==0
-        # print(mask.size())
-        encoder_mask = mask.bool()
-        att_score.masked_fill_(encoder_mask.unsqueeze(-1), -6e4)
-        # print(att_score)
-        att_prob = torch.softmax(att_score, 2)
+    def linear_combine(self, score, value):
+        bs, ks, hs = value.size()
+        v = value.view(bs, ks, self.n_head, self.head_dim)
+        att_prob = torch.softmax(score, 2)
         att_prob = self.dropatt(att_prob)
-
         attended = torch.einsum('bqkn,bknd->bqnd', att_prob, v)
-        out = self.o_net(attended.contiguous().view(bs,qs,-1))
-        out = self.dropout(out)
-        return out, att_prob
+        return attended
 
     def projection(self, q, kv, mem):
         kv = self.kv_net(kv)
@@ -78,18 +80,17 @@ class MultiheadAtt(AttBase):
             kv = self.layer_norm(kv)
             q = self.layer_norm(q)
 
-        kv, query, key, value = self.projection(q,kv, mem)
+        kv, query, key, value = self.projection(q, kv, mem)
         out, att_prob = self.attend(query, key, value, mask)
         return query, out, kv, att_prob
 
+
+class MultiheadAtt(AttBase):
+    def __init__(self, hidden_dim:int, n_head:int, head_dim:int,
+                 dropout_rate:float, dropatt_rate:float=0.0, pre_lnorm=False, **kwargs):
+        super(MultiheadAtt, self).__init__(hidden_dim, n_head, head_dim, dropout_rate, dropatt_rate, pre_lnorm)
+
     def forward(self, q, kv, mem, mask):
-        """
-        :param q:
-        :param kv:
-        :param mem: [key_mem, value_mem]
-        :param mask:
-        :return:
-        """
         query, out, kv, att_prob = self.before_add(q, kv, mem, mask)
         out = query + out
         if not self.pre_lnorm:
@@ -114,105 +115,69 @@ class SentenceAwareAtt(MultiheadAtt):
 
 class RelMultiheadAtt(AttBase):
     def __init__(self, hidden_dim:int, n_head:int, head_dim:int,
-                 dropout_rate:float, dropatt_rate:float=0.0, pre_lnorm=False):
+                 dropout_rate:float,
+                 dropatt_rate:float=0.0, pre_lnorm=False, maxlen=512, relative_attention_num_buckets=128,
+                 is_decoder=False):
         super(RelMultiheadAtt, self).__init__(hidden_dim, n_head, head_dim,
                                               dropout_rate, dropatt_rate, pre_lnorm)
-        self.r_net = nn.Linear(self.hidden_dim, self.n_head * self.head_dim, bias=False)
+        self.is_decoder = is_decoder
+        self.relative_attention_num_buckets = relative_attention_num_buckets
+        self.maxlen = maxlen
+        self.relative_attention_bias = nn.Embedding(self.relative_attention_num_buckets, self.n_head)
 
-    def _left_shift(self, x:torch.Tensor)->torch.Tensor:
-        """
-        :param x: x.size() = [batch_size, q_len, k_len, n_head]
-        x[0,:,:,0] =
-        [[[9,8,7,6,5,4,3,2,1,0],
-          [9,8,7,6,5,4,3,2,1,0],
-          [9,8,7,6,5,4,3,2,1,0]]]]
+    @staticmethod
+    def _relative_position_bucket(relative_position, bidirectional=True, num_buckets=32, max_distance=128):
+        relative_buckets = 0
+        if bidirectional:
+            num_buckets //= 2
+            relative_buckets += (relative_position > 0).to(torch.long) * num_buckets
+            relative_position = torch.abs(relative_position)
+        else:
+            relative_position = -torch.min(relative_position, torch.zeros_like(relative_position))
+        # now relative_position is in the range [0, inf)
 
-        :param zero_triu:
-        :return: left_shifted tensor of x by the tokenize along query axis
-        x[0,:,:,0] =
-        [[[7,6,5,4,3,2,1,0,0,0], -> left shifted by 2
-          [8,7,6,5,4,3,2,1,0,0], -> left shifted by 1
-          [9,8,7,6,5,4,3,2,1,0]]]] ->shifted 0
+        # half of the buckets are for exact increments in positions
+        max_exact = num_buckets // 2
+        is_small = relative_position < max_exact
 
-        """
-        bs,qs,ks,hs = x.size()
-        zero_pad = torch.zeros((bs, qs, 1,hs),
-                               device=x.device, dtype=x.dtype)
-        x_padded = torch.cat([zero_pad, x], dim=2)  #[b,q,k+1,n]
+        # The other half of the buckets are for logarithmically bigger bins in positions up to max_distance
+        relative_postion_if_large = max_exact + (
+            torch.log(relative_position.float() / max_exact)
+            / math.log(max_distance / max_exact)
+            * (num_buckets - max_exact)
+        ).to(torch.long)
+        relative_postion_if_large = torch.min(
+            relative_postion_if_large, torch.full_like(relative_postion_if_large, num_buckets - 1)
+        )
 
-        x_padded = x_padded.view(bs, ks+1, qs, hs)
+        relative_buckets += torch.where(is_small, relative_position, relative_postion_if_large)
+        return relative_buckets
 
-        x = x_padded[:,1:].view_as(x)
+    def compute_bias(self, query_length, key_length):
+        """ Compute binned relative position bias """
+        context_position = torch.arange(query_length, dtype=torch.long)[:, None]
+        memory_position = torch.arange(key_length, dtype=torch.long)[None, :]
+        relative_position = memory_position - context_position  # shape (query_length, key_length)
+        relative_position_bucket = self._relative_position_bucket(
+            relative_position,  # shape (query_length, key_length)
+            bidirectional=(not self.is_decoder),
+            num_buckets=self.relative_attention_num_buckets,
+            max_distance=self.maxlen
+        )
+        relative_position_bucket = relative_position_bucket.to(self.relative_attention_bias.weight.device)
+        values = self.relative_attention_bias(relative_position_bucket)[None]  # shape (query_length, key_length, num_heads)
+        return values
 
-        ones = torch.ones((qs, ks),device=x.device, dtype=x.dtype)
-        x = x * torch.tril(ones, ks-bs)[None,:, :, None]
+    def compute_score(self, query, key):
+        score = super().compute_score(query, key)
+        ql = query.size(1)
+        kl = key.size(1)
+        position_bias = self.compute_bias(ql, kl)
+        return score + position_bias
 
-        return x
-
-    def attend(self, query, key, value, rel, rr_bias, rw_bias, mask):
-        bs, qs, hs = query.size()
-        ks = key.size(1)
-        ms = ks-qs
-
-        # print(query.size(),key.size(),value.size(),rel.size())
-        #reshaping
-        k = key.view(bs, ks, self.n_head, self.head_dim)
-        v = value.view(bs, ks, self.n_head, self.head_dim)
-        q = query.view(bs, qs, self.n_head, self.head_dim)
-        r = rel.view(qs, self.n_head, self.head_dim)
-
-        rwq = q + rw_bias[None, None]
-        AC = torch.einsum('bqnd,bknd->bqkn', rwq, k)
-
-        rrq = q + rr_bias[None, None]
-        BD = torch.einsum('bqnd,knd->bqkn', rrq, r)
-        BD = self._left_shift(BD)
-        #attend
-        if mask is None:
-            print('mask is none')
-            mask = torch.ones((qs,ks)).byte()
-            mask = mask.triu(1+ms) ==0
-        # print(mask.size())
-        mask = mask.bool()
-
-        att_score = AC + BD
-        att_score.mul_(self.scale)
-        att_score.masked_fill_(mask.unsqueeze(-1), -float('inf'))
-        # print(att_score)
-        att_prob = torch.softmax(att_score,2)
-        att_prob = self.dropatt(att_prob)
-
-        attended = torch.einsum('bqkn,bknd->bqnd',att_prob,v)
-        out = self.o_net(attended.contiguous().view(bs,qs,-1))
-        out = self.dropout(out)
-        return out
-
-    def forward(self, x, mem, mask, pos_emb, rr_bias, rw_bias):
-        """
-        :param x: input, input.size() = [batch_size, input_len, hidden_dim]
-        :param mem:  memory, input.size() = [batch_size, memory_len, hidden_dim]
-        :param pos_ebd: position_embedding, pos_ebd.size() = [input_len + memory_len, hidden_dim]
-        :param mask: size = [batch_size, query_len, memory_len]
-        :param rr_bias : attention bias
-        :param rw_bias : attention bias
-        :return:
-        """
-        if mem is None:
-            mem = torch.Tensor().to(x.device).to(x.dtype)
-        c = torch.cat([mem,x],1)
-
-        if self.pre_lnorm:
-            c = self.layer_norm(c)
-            x = self.layer_norm(x)
-
-        #projection
-        kv = self.kv_net(c)
-        key, value = kv.chunk(2,-1)
-        query = self.q_net(x)
-        rel = self.r_net(pos_emb)
-
-        out = self.attend(query, key, value, rel,rr_bias, rw_bias, mask)
-        out = x + out
+    def forward(self, q, kv, mem, mask):
+        query, out, kv, att_prob = self.before_add(q, kv, mem, mask)
+        out = query + out
         if not self.pre_lnorm:
             out = self.layer_norm(out)
-        return out
+        return out, kv, att_prob

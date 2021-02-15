@@ -109,7 +109,7 @@ class MTBatchfier(BaseBatchfier):
                 tgt_lens = cur_batch['tgt_lens'].tolist()
                 for i in range(len(src_texts)):
                     if self.sampling_mode:
-                        yield src_texts[i], src_lens[i], tgt_texts[i][:1], 1
+                        yield src_texts[i], src_lens[i], tgt_texts[i][:2], 2
                     else:
                         yield src_texts[i], src_lens[i], tgt_texts[i], tgt_lens[i]
 
@@ -647,9 +647,6 @@ class FairTestBatchfier(IterableDataset, FairBatchfier):
 
     def to_iterator(self):
         return DataLoader(self, self.size, collate_fn=self.collate_fn)
-
-
-
 
 
 def get_fair_batchfier(dataset, device):

@@ -15,7 +15,7 @@ def get_batchfier(args):
         test_batchfier = FairTestBatchfier(args.dataset, args.batch_size * 4, device=args.device)
 
     elif args.task =='seq2seq':
-        test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, args.batch_size, args.seq_len,
+        test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, args.batch_size * 4, args.seq_len,
                                  padding_index=args.padding_index, epoch_shuffle=False,
                                  device=args.device, sampling_mode=True)
     return test_batchfier.to_iterator()
@@ -54,11 +54,11 @@ if __name__ == '__main__':
     t = time.time()
     for inp in batchfier:
         cnt +=1
-        print(cnt)
+        print(cnt, time.time()-t)
+        t = time.time()
         res.extend(sampler.sample(inp))
     if not os.path.exists(os.path.dirname(args.sample_save_path)):
         os.makedirs(os.path.dirname(args.sample_save_path))
-    print(time.time()-t)
     # f = open(args.sample_save_path, 'w')
     # txts = [' '.join(map(str, i[:-1])) + ' \n' for i in res]
     # f.writelines(txts)

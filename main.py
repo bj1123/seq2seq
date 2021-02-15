@@ -20,7 +20,7 @@ def get_model(args):
                                          args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
                                          args.dropout_rate,
                                          args.dropatt_rate, args.padding_index, args.cutoffs, pre_lnorm=args.pre_lnorm,
-                                         rel_att=args.relative_pos, shared_embedding=args.shared_embedding,
+                                         pos_enc=args.positional_encoding, shared_embedding=args.shared_embedding,
                                          tie_embedding=args.tie_embedding)
 
         elif args.model_type == 'sentence-aware':
@@ -28,7 +28,7 @@ def get_model(args):
                                        args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
                                        args.dropout_rate,
                                        args.dropatt_rate, args.padding_index, pre_lnorm=args.pre_lnorm,
-                                       rel_att=args.relative_pos, shared_embedding=args.shared_embedding,
+                                       pos_enc=args.positional_encoding, shared_embedding=args.shared_embedding,
                                        tie_embedding=args.tie_embedding)
 
         else:
@@ -36,13 +36,13 @@ def get_model(args):
                                         args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
                                         args.dropout_rate,
                                         args.dropatt_rate, args.padding_index, pre_lnorm=args.pre_lnorm,
-                                        rel_att=args.relative_pos, shared_embedding=args.shared_embedding,
+                                        pos_enc=args.positional_encoding, shared_embedding=args.shared_embedding,
                                         tie_embedding=args.tie_embedding)
     elif args.task == 'multitask':
         model = CrossLingualModel(args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim,
                                   args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
                                   args.dropout_rate, args.dropatt_rate, args.padding_index, pre_lnorm=args.pre_lnorm,
-                                  rel_att=args.relative_pos, shared_embedding=args.shared_embedding,
+                                  pos_enc=args.positional_encoding, shared_embedding=args.shared_embedding,
                                   tie_embedding=args.tie_embedding)
     initializer = Initializer('normal', 0.02, 0.1)
     initializer.initialize(model)
