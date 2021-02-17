@@ -6,6 +6,11 @@ import pandas as pd
 import numpy as np
 
 
+def down_pickle_protocol(path):
+    old = pd.read_pickle(path)
+    old.to_pickle(path, protocol=4)
+
+
 def get_files(path):
     paths = []
     if os.path.isfile(path):

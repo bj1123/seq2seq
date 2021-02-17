@@ -74,7 +74,7 @@ class AttBase(nn.Module, ABC):
         if kv is None:
             return q, None
         if mem is None:
-            mem = torch.Tensor().to(kv.device).to(kv.dtype)
+            mem = torch.Tensor().to(device=kv.device, dtype=kv.dtype)
 
         if self.pre_lnorm:
             kv = self.layer_norm(kv)
@@ -194,12 +194,14 @@ class GraphRelMultiheadAtt(AttBase):
         self.relative_attention_num_buckets = relative_attention_num_buckets
         self.maxlen = maxlen
 
+        self.go_net = nn.Linear(hidden_dim, hidden_dim, bias=False)
+
     @staticmethod
-    def _relative_position_bucket(relative_position, bidirectional=True, num_buckets=32, max_distance=128):
+    def _get_distance(relative_position, bidirectional=True, num_buckets=32, max_distance=128):
         relative_buckets = 0
         if bidirectional:
             relative_position = torch.abs(relative_position)
-            masks = torch.full(relative_position.size(), False, relative_position=temp.device)
+            masks = torch.full(relative_position.size(), False, device=relative_position.device)
         else:
             relative_position = -torch.min(relative_position, torch.ones_like(relative_position))
             masks = relative_position == -1
@@ -223,3 +225,42 @@ class GraphRelMultiheadAtt(AttBase):
         dist = 1 / (relative_buckets + 1)
         dist = dist.masked_fill(masks, 0)
         return dist
+
+    def graph_att(self, q, k, graph_mem, mask):
+        if graph_mem is None:
+            graph_mem = torch.Tensor().to(device=k.device, dtype=k.dtype)
+        graph_new_mem = k
+        k = torch.cat([graph_mem,k],1)
+        qs, ks = q.size(1), k.size(1)
+        context_position = torch.arange(qs, dtype=torch.long, device=q.device)[:, None]
+        memory_position = torch.arange(ks, dtype=torch.long, device=q.device)[None, :]
+        relative_position = memory_position - context_position  # shape (query_length, key_length)
+        dist = self._get_distance(
+            relative_position,  # shape (query_length, key_length)
+            bidirectional=(not self.is_decoder),
+            num_buckets=self.relative_attention_num_buckets,
+            max_distance=self.maxlen
+        )
+        dist = dist[None].masked_fill(mask.bool(), 0).to(k.dtype)
+        degree = dist.sum(-1)
+        inv_degree = (1 / degree)[...,None]  # [bs, qs, 1]
+        w = dist * inv_degree
+        out = torch.matmul(w, k)
+        return self.go_net(out), graph_new_mem
+
+    def before_add(self, q, kv, mem, mask):
+        if mem is None:
+            graph_mem = plain_mem = None
+        else:
+            graph_mem, plain_mem = mem[..., -512:], mem[..., :-512]
+        graph_out, graph_new_mem = self.graph_att(q, kv, graph_mem, mask)
+        query, out, plain_new_mem, att_prob = super().before_add(q, kv, plain_mem, mask)  # from plain transformer
+        new_mem = torch.cat([plain_new_mem,graph_new_mem], -1)
+        return query, out, new_mem, att_prob, graph_out
+
+    def forward(self, q, kv, mem, mask):
+        query, out, kv, att_prob, graph_out = self.before_add(q, kv, mem, mask)
+        out = query + out + graph_out
+        if not self.pre_lnorm:
+            out = self.layer_norm(out)
+        return out, kv, att_prob

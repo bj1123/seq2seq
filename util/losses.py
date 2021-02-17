@@ -6,8 +6,8 @@ import torch.nn as nn
 import numpy as np
 import math
 from abc import ABC
-import pytorch_lightning as pl
-from util.metrics import *
+# from util.metrics import *
+# import pytorch_lightning as pl
 
 
 class BaseLoss(_Loss, ABC):
@@ -47,7 +47,7 @@ class PlainLoss(BaseLoss):
         self.padding_idx = padding_idx
         self.seq2seq = seq2seq
         self.criteria = torch.nn.CrossEntropyLoss(ignore_index=padding_idx)
-        self.metrics = {'perplexity': Perplexity(padding_idx)}
+        # self.metrics = {'perplexity': Perplexity(padding_idx)}
 
     def forward(self, out, inp):
         y_hat, y = out['logits'], inp['label']
@@ -141,7 +141,7 @@ class LabelSmoothingLoss(BaseLoss):
         self.register_buffer('one_hot', one_hot.unsqueeze(0))
         self.vocab_Size = vocab_size
         self.ignore_index = ignore_index
-        self.metrics = {'perplexity': Perplexity(ignore_index)}
+        # self.metrics = {'perplexity': Perplexity(ignore_index)}
 
     def forward(self, out, inp):
         y_hat, y = out['logits'], inp['label']

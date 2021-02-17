@@ -114,9 +114,7 @@ class Sampler:
         probs, i = torch.topk(torch.log_softmax(logits, -1), self.width, -1)  # [batch, beam_size]
         if self.use_cache:
             new_tgt = i.view(-1,1)
-            tgt_mem = out['tgt_mem']
-            s = tgt_mem[0].size()
-            tgt_mem = [i[:, None].repeat(1, self.width, 1, 1).view(-1, *s[1:]) for i in out['tgt_mem']]
+            tgt_mem = [i[:, None].repeat(1, self.width, 1, 1).view(-1, *i.size()[1:]) for i in out['tgt_mem']]
             inp['tgt_mem'] = tgt_mem
             inp['tgt_len'] = torch.ones(size=(bs,), dtype=torch.long, device=logits.device)
         else:
@@ -150,10 +148,10 @@ class Sampler:
             new_tgt = sampled.view(-1,1)
             tgt_mem = inp['tgt_mem']  # [bs * width, l, hidden]
             new_mem = out['tgt_mem']  # [bs * width, l, hidden]
-            hidden_size = tgt_mem[0].size(-1)
             new_tgt_mem = [torch.cat(
-                [tgt_mem[i].view(bs, self.width, -1, hidden_size)[ind],
-                 new_mem[i].view(bs, self.width, -1, hidden_size)[ind]], 2).view(bs*self.width,-1,hidden_size)
+                [tgt_mem[i].view(bs, self.width, -1, tgt_mem[i].size(-1))[ind],
+                 new_mem[i].view(bs, self.width, -1, tgt_mem[i].size(-1))[ind]], 2).view(
+                bs*self.width, -1, tgt_mem[i].size(-1))
              for i in range(len(tgt_mem))]
             inp['tgt_mem'] = new_tgt_mem
         else:

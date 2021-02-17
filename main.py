@@ -135,36 +135,36 @@ def main_pure_torch(args):
     print(res)
 
 
-def main_pl(args):
-    import pytorch_lightning as pl
-    from util.pl_wrapper import PLWrapper, DataModule
-    from pytorch_lightning.callbacks import ModelCheckpoint
-
-    model = get_model(args)
-    train_batchfier, test_batchfier = get_batchfier(args)
-    dm = DataModule(train_batchfier, test_batchfier, args.batch_size)
-    criteria = get_loss(args, train_batchfier)
-
-    # get decay_lr
-    callbacks = []
-    decay_step = len(train_batchfier) * args.n_epoch // args.update_step
-    callbacks.append(DecayLearningRate(args.warmup_step, decay_step))
-
-    # ckpt manager
-    checkpoint_callback = ModelCheckpoint(
-        monitor='val_loss',
-        dirpath=args.savename,
-        filename='{epoch:02d}-{val_loss:.2f}',
-        save_top_k=10,
-        mode='min',
-    )
-
-    precision = 16 if args.mixed_precision else 32
-    pl_wrapper = PLWrapper(model, criteria)
-    trainer = pl.Trainer(gpus=1, precision=precision, accumulate_grad_batches=args.update_step,
-                         gradient_clip_val=args.clip_norm, max_epochs=args.n_epoch, default_root_dir=args.savename,
-                         callbacks=callbacks)
-    trainer.fit(pl_wrapper, dm)
+# def main_pl(args):
+#     import pytorch_lightning as pl
+#     from util.pl_wrapper import PLWrapper, DataModule
+#     from pytorch_lightning.callbacks import ModelCheckpoint
+#
+#     model = get_model(args)
+#     train_batchfier, test_batchfier = get_batchfier(args)
+#     dm = DataModule(train_batchfier, test_batchfier, args.batch_size)
+#     criteria = get_loss(args, train_batchfier)
+#
+#     # get decay_lr
+#     callbacks = []
+#     decay_step = len(train_batchfier) * args.n_epoch // args.update_step
+#     callbacks.append(DecayLearningRate(args.warmup_step, decay_step))
+#
+#     # ckpt manager
+#     checkpoint_callback = ModelCheckpoint(
+#         monitor='val_loss',
+#         dirpath=args.savename,
+#         filename='{epoch:02d}-{val_loss:.2f}',
+#         save_top_k=10,
+#         mode='min',
+#     )
+#
+#     precision = 16 if args.mixed_precision else 32
+#     pl_wrapper = PLWrapper(model, criteria)
+#     trainer = pl.Trainer(gpus=1, precision=precision, accumulate_grad_batches=args.update_step,
+#                          gradient_clip_val=args.clip_norm, max_epochs=args.n_epoch, default_root_dir=args.savename,
+#                          callbacks=callbacks)
+#     trainer.fit(pl_wrapper, dm)
 
 
 if __name__ == '__main__':

@@ -2,9 +2,9 @@ n_epoch: 50
 relative_pos: False
 gathered: True
 device: 'cuda'
-batch_size: 16
+batch_size: 64
 gpu0_size: 8
-update_step: 8
+update_step: 2
 mixed_precision: True
 decay_step: 20000
 vocab_size: 30000

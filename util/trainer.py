@@ -5,7 +5,7 @@ import apex
 from util.losses import *
 from abc import ABC, abstractmethod
 import os
-
+import time
 
 def get_acc(logits, y):
     _, predicted = torch.max(logits.data, 1)

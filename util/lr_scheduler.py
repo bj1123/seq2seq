@@ -1,6 +1,7 @@
 import math
 from torch.optim.lr_scheduler import LambdaLR
-import pytorch_lightning as pl
+# import pytorch_lightning as pl
+
 
 class WarmupExponentialSchedule(LambdaLR):
     """ Linear warmup and then exponential decay.
@@ -61,36 +62,36 @@ class WarmupLinearSchedule(LambdaLR):
         self.before_loss = val_loss
 
 
-class DecayLearningRate(pl.callbacks.Callback):
-    def __init__(self, warmup_steps, t_total, decay_on_valid=False,):
-        self.warmup_steps = warmup_steps
-        self.t_total = t_total
-        self.decay_on_valid = decay_on_valid
-        if self.decay_on_valid:
-            self.before_loss = 1e9
-            self.decay_coef = 1
-        self.step = 0
-        self.init_lrs = []
-
-    def on_train_start(self, trainer, pl_module):
-        # track the initial learning rates
-        for opt_idx, optimizer in enumerate(trainer.optimizers):
-            group = [param_group['lr'] for param_group in optimizer.param_groups]
-            self.init_lrs.append(group)
-
-    def on_before_zero_grad(self, trainer, pl_module, optimizer):
-        self.step+=1
-        if self.step < self.warmup_steps:
-            lr_lambda = float(self.step) / float(max(1, self.warmup_steps))
-        else:
-            lr_lambda = max(0.0, float(self.t_total - self.step) / float(max(1.0, self.t_total - self.warmup_steps)))
-        if self.decay_on_valid:
-            lr_lambda *= self.decay_coef
-
-        for opt_idx, optimizer in enumerate(trainer.optimizers):
-            init_lr_group = self.init_lrs[opt_idx]
-            new_lr_group = []
-            for p_idx, param_group in enumerate(optimizer.param_groups):
-                new_lr = lr_lambda * init_lr_group[p_idx]
-                new_lr_group.append(new_lr)
-                param_group['lr'] = new_lr
+# class DecayLearningRate(pl.callbacks.Callback):
+#     def __init__(self, warmup_steps, t_total, decay_on_valid=False,):
+#         self.warmup_steps = warmup_steps
+#         self.t_total = t_total
+#         self.decay_on_valid = decay_on_valid
+#         if self.decay_on_valid:
+#             self.before_loss = 1e9
+#             self.decay_coef = 1
+#         self.step = 0
+#         self.init_lrs = []
+#
+#     def on_train_start(self, trainer, pl_module):
+#         # track the initial learning rates
+#         for opt_idx, optimizer in enumerate(trainer.optimizers):
+#             group = [param_group['lr'] for param_group in optimizer.param_groups]
+#             self.init_lrs.append(group)
+#
+#     def on_before_zero_grad(self, trainer, pl_module, optimizer):
+#         self.step+=1
+#         if self.step < self.warmup_steps:
+#             lr_lambda = float(self.step) / float(max(1, self.warmup_steps))
+#         else:
+#             lr_lambda = max(0.0, float(self.t_total - self.step) / float(max(1.0, self.t_total - self.warmup_steps)))
+#         if self.decay_on_valid:
+#             lr_lambda *= self.decay_coef
+#
+#         for opt_idx, optimizer in enumerate(trainer.optimizers):
+#             init_lr_group = self.init_lrs[opt_idx]
+#             new_lr_group = []
+#             for p_idx, param_group in enumerate(optimizer.param_groups):
+#                 new_lr = lr_lambda * init_lr_group[p_idx]
+#                 new_lr_group.append(new_lr)
+#                 param_group['lr'] = new_lr

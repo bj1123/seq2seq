@@ -54,9 +54,9 @@ if __name__ == '__main__':
     t = time.time()
     for inp in batchfier:
         cnt +=1
+        res.extend(sampler.sample(inp))
         print(cnt, time.time()-t)
         t = time.time()
-        res.extend(sampler.sample(inp))
     if not os.path.exists(os.path.dirname(args.sample_save_path)):
         os.makedirs(os.path.dirname(args.sample_save_path))
     # f = open(args.sample_save_path, 'w')

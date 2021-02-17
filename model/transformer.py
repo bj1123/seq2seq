@@ -105,7 +105,8 @@ class BaseNetwork(nn.Module):
         if pos_enc == 'relative':
             pos_encs[0] = RelMultiheadAtt
         elif pos_enc == 'graph-relative':
-            pos_encs = [RelMultiheadAtt for _ in range(n_layers)]
+            pos_encs[0] = GraphRelMultiheadAtt
+            # pos_encs = [RelMultiheadAtt for _ in range(n_layers)]
         key_args = self.get_relative_encoding_args(pos_enc)
         self.main_nets = nn.ModuleList([block_type(hidden_dim, projection_dim, n_heads, head_dim,
                                                    dropout_rate, dropatt_rate, pre_lnorm, pos_encs[i], **key_args)
@@ -129,11 +130,9 @@ class BaseNetwork(nn.Module):
         return mask
 
     def get_relative_encoding_args(self, pos_enc):
-        if pos_enc =='relative':
-            d = {'maxlen':self.seq_len, 'relative_attention_num_buckets': self.seq_len//4,
+        if pos_enc in ['relative', 'graph-relative']:
+            d = {'maxlen': self.seq_len, 'relative_attention_num_buckets': self.seq_len//4,
                  'is_decoder': not self.is_bidirectional}
-        elif pos_enc =='graph_relative':
-            raise NotImplementedError
         else:
             d = {}
         return d
