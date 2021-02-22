@@ -96,20 +96,22 @@ class ComplexityLoss(BaseLoss):
 
 
 class SentenceAwareLoss(BaseLoss):
-    def __init__(self, main_loss:BaseLoss, auxiliary_lambda=1):
+    def __init__(self, main_loss: BaseLoss, auxiliary_lambda=1):
         super(SentenceAwareLoss, self).__init__()
         self.main_loss = main_loss
         self.aux_lambda = auxiliary_lambda
         # self.criteria = torch.nn.L1Loss()
-        self.criteria = torch.nn.MSELoss()
+        # self.criteria = torch.nn.MSELoss()
+        self.criteria = torch.nn.MSELoss(reduction='none')
 
     def forward(self, out, inp):
         main_loss = self.main_loss(out, inp)
         # return main_loss
         y_hat, y = out['tgt_emb_hat'], out['tgt_emb']
-        aux_loss = self.criteria(y_hat, y)
-        self.cum_loss += aux_loss
-        return main_loss + self.aux_lambda * aux_loss
+        aux_loss = self.criteria(y_hat, y).mean(-1)
+        self.cum_loss += aux_loss.sum()
+        self.cum_cnt += aux_loss.numel()
+        return main_loss + self.aux_lambda * aux_loss.mean()
 
     # def get_description(self, step):
     #     tok_loss = self.main_loss.cum_loss
@@ -117,13 +119,14 @@ class SentenceAwareLoss(BaseLoss):
     #            f" token ppl : {math.exp(tok_loss / step):.3f} acc : {self.cum_acc / step} "
     #     return desc
 
-    def get_description(self, step):
-        mse_loss = self.cum_loss
-        tok_loss = self.main_loss.cum_loss
-        desc = f"total loss: {(tok_loss + self.aux_lambda * mse_loss)/step:.3f}" \
-               f" token loss : {tok_loss / step:.3f}," \
-               f" mse loss : {mse_loss / step:.3f}," \
-               f" token ppl : {math.exp(tok_loss / step):.3f} acc : {self.cum_acc / step} "
+    def get_description(self):
+        token_loss = self.main_loss.cum_loss / self.main_loss.cum_cnt
+        mse_loss = self.cum_loss / self.cum_cnt
+        # mse_loss = 0
+        desc = f"total loss: {token_loss + mse_loss:.3f}" \
+               f" token loss : {token_loss:.3f}," \
+               f" mse loss : {mse_loss:.3f}," \
+               f" token ppl : {math.exp(token_loss):.3f} acc : {self.cum_acc / self.cum_cnt} "
         return desc
 
     def clear_loss(self):

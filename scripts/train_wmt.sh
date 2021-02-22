@@ -8,8 +8,8 @@ CUDA_VISIBLE_DEVICES=0 python main.py \
  --src-path ../data/$DATASET/en_encoded \
  --tgt-path ../data/$DATASET/de_encoded \
  --loss-type plain \
- --positional-encoding relative \
+ --positional-encoding absolute \
  --task seq2seq \
- --model-type plain \
+ --model-type sentence-aware \
  --dataset-name $DATASET \
  --model-size base;

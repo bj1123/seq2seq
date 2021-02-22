@@ -144,7 +144,6 @@ class TorchTextMT(data.Dataset):
         if self.batch_criteria == 'token':
             avg = sum([len(i) for i in self.src.texts]) / len(self.src)
             avg_batch = self.batch_size / avg
-            print(avg_batch, len(self.src))
             return int(len(self.src) / avg_batch)
         else:
             return int(len(self.src) / self.batch_size)

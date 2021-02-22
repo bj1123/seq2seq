@@ -18,7 +18,7 @@ def get_batchfier(args):
         # test_batchfier = TorchTextMT(args.train_src_path, args.train_tgt_path, args.batch_size // args.update_step,
         #                               padding_index=args.padding_index, device=args.device,
         #                               epoch_shuffle=False, sampling_mode=True)
-        test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, 128,
+        test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, 16,
                                      padding_index=args.padding_index, epoch_shuffle=False,
                                      device=args.device, sampling_mode=True)
     return test_batchfier.to_iterator()
@@ -38,7 +38,7 @@ def get_sampler(args, model, batchfier):
                                     batchfier.dataset.eos_idx, use_cache=True, length_penalty=args.lengths_penalty)
     else:
         trainer = Sampler(model, args.sampling_mode, 200, args.temperature, args.width, batchfier.dataset.eos_idx,
-                          use_cache=True, length_penalty=args.lengths_penalty)
+                          use_cache=False, length_penalty=args.lengths_penalty)
     return trainer
 
 

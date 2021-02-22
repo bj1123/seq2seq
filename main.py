@@ -11,7 +11,8 @@ from util.lr_scheduler import *
 
 
 def get_model(args):
-    print(args.batch_size, args.n_epoch, args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim, args.n_heads,
+    print(args.savename, args.batch_size, args.n_epoch, args.vocab_size, args.batch_seqlen, args.hidden_dim,
+          args.projection_dim, args.n_heads,
           args.head_dim, args.n_enc_layers, args.n_dec_layers, args.dropout_rate,
           args.dropatt_rate, args.padding_index, args.shared_embedding, args.tie_embedding)
     if args.task in ('seq2seq', 'access'):

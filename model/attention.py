@@ -30,6 +30,7 @@ class AttBase(nn.Module, ABC):
     def mask(score, mask):
         encoder_mask = mask.bool()
         score.masked_fill_(encoder_mask.unsqueeze(-1), -6e4)
+        # score.masked_fill_(encoder_mask.unsqueeze(1), -6e4)
         return score
 
     def attend(self, query, key, value, mask):
@@ -51,16 +52,22 @@ class AttBase(nn.Module, ABC):
         k = key.view(bs, ks, self.n_head, self.head_dim)
         q = query.view(bs, qs, self.n_head, self.head_dim)
 
+        # k = k.permute(0,2,3,1)
+        # q = q.permute(0,2,1,3)
+
         att_score = torch.einsum('bqnd,bknd->bqkn', q, k)
+        # att_score = torch.matmul(q,k) # bnqk
         att_score.mul_(self.scale)
         return att_score
 
     def linear_combine(self, score, value):
         bs, ks, hs = value.size()
         v = value.view(bs, ks, self.n_head, self.head_dim)
+        # v = v.permute(0,2,1,3) # b n k d
         att_prob = torch.softmax(score, 2)
         att_prob = self.dropatt(att_prob)
         attended = torch.einsum('bqkn,bknd->bqnd', att_prob, v)
+        # attended = torch.matmul(att_prob, v).transpose(1,2)  # b n q k , b n k d
         return attended
 
     def projection(self, q, kv, mem):
