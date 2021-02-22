@@ -92,7 +92,7 @@ class Trainer:
                 optimizer.step()
                 model.zero_grad()
                 scheduler.step(self.step)
-                description = criteria.get_description(self.update_step * pbar_cnt)
+                description = criteria.get_description()
                 description = self.update_description(description, n_bar)
                 pbar.set_description(description)
                 # pbar.set_description(
@@ -135,7 +135,7 @@ class Trainer:
                 loss = criteria(out, inp)
                 step_loss += loss.item()
                 pbar_cnt += 1
-                description = criteria.get_description(pbar_cnt)
+                description = criteria.get_description()
                 pbar.set_description(description)
         pbar.close()
         loss = math.exp(step_loss / pbar_cnt)

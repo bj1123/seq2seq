@@ -11,7 +11,7 @@ from util.lr_scheduler import *
 
 
 def get_model(args):
-    print(args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim, args.n_heads,
+    print(args.batch_size, args.n_epoch, args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim, args.n_heads,
           args.head_dim, args.n_enc_layers, args.n_dec_layers, args.dropout_rate,
           args.dropatt_rate, args.padding_index, args.shared_embedding, args.tie_embedding)
     if args.task in ('seq2seq', 'access'):
@@ -60,10 +60,14 @@ def get_batchfier(args):
                                                         args.batch_size, args.seq_len,
                                                         padding_index=args.padding_index, device=args.device)
         else:
-            train_batchfier = MTBatchfier(args.train_src_path, args.train_tgt_path, args.batch_size, args.seq_len,
+            train_batchfier = TorchTextMT(args.train_src_path, args.train_tgt_path, args.batch_size // args.update_step,
                                           padding_index=args.padding_index, device=args.device)
-            test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, args.batch_size, args.seq_len,
-                                         padding_index=args.padding_index, device=args.device)
+            test_batchfier = TorchTextMT(args.test_src_path, args.train_tgt_path, args.batch_size // args.update_step,
+                                         padding_index=args.padding_index, epoch_shuffle=False, device=args.device)
+            # train_batchfier = MTBatchfier(args.train_src_path, args.train_tgt_path, args.batch_size, args.seq_len,
+            #                               padding_index=args.padding_index, device=args.device)
+            # test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, args.batch_size, args.seq_len,
+            #                              padding_index=args.padding_index, device=args.device)
     elif args.task == 'multitask':
         train_batchfier = MultitaskBatchfier(args.train_path, args.special_token_indice, args.batch_size, args.seq_len,
                                              padding_index=args.padding_index, device=args.device)
@@ -101,7 +105,8 @@ def get_trainer(args, model, train_batchfier, test_batchfier):
         print('mixed_precision')
         opt_level = 'O2'
         model, optimizer = apex.amp.initialize(model, optimizer, opt_level=opt_level)
-    decay_step = len(train_batchfier) * args.n_epoch // args.update_step
+    print(train_batchfier.batch_per_epoch())
+    decay_step = train_batchfier.batch_per_epoch() * args.n_epoch // args.update_step
     scheduler = WarmupLinearSchedule(optimizer, args.warmup_step, decay_step, args.decay_on_valid)
     # scheduler = WarmupExponentialSchedule(optimizer, args.warmup_step, len(train_batchfier) // args.update_step)
     criteria = get_loss(args, train_batchfier)

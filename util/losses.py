@@ -15,11 +15,13 @@ class BaseLoss(_Loss, ABC):
         super(BaseLoss, self).__init__()
         self.cum_loss = 0
         self.cum_acc = 0
+        self.cum_cnt = 0
         self.metrics = {}
 
     def clear_loss(self):
         self.cum_loss = 0
         self.cum_acc = 0
+        self.cum_cnt = 0
 
     def to_log(self, out, inp):  # pytorch_lightning
         d = {}
@@ -59,10 +61,10 @@ class PlainLoss(BaseLoss):
         self.cum_loss +=l
         return l
 
-    def get_description(self, step):  # for pure pytorch
+    def get_description(self):  # for pure pytorch
         tok_loss = self.cum_loss
         desc = " token loss : %f, token ppl : %f, acc : %f " % (
-            tok_loss / step, math.exp(tok_loss / step), self.cum_acc / step)
+            tok_loss / self.cum_cnt, math.exp(tok_loss / self.cum_cnt), self.cum_acc / self.cum_cnt)
         return desc
 
 
@@ -156,12 +158,15 @@ class LabelSmoothingLoss(BaseLoss):
         true_dist = self.one_hot.repeat(y_hat.size(0),1)
         true_dist.scatter_(1, y.data.unsqueeze(1), self.confidence)
         true_dist.masked_fill_((y == self.ignore_index).unsqueeze(1),0)
-        l = torch.mean(torch.sum(-true_dist * pred, dim=-1))
+        tot_loss = torch.sum(-true_dist * pred, dim=-1)
+        non_padding_cnt = (y != self.ignore_index).sum()
+        l = torch.sum(tot_loss)
         self.cum_loss += l
-        return l
+        self.cum_cnt += non_padding_cnt
+        return l / non_padding_cnt
 
-    def get_description(self, step):
+    def get_description(self):
         tok_loss = self.cum_loss
         desc = " token loss : %f, token ppl : %f, acc : %f " % (
-            tok_loss / step, math.exp(tok_loss / step), self.cum_acc / step)
+            tok_loss / self.cum_cnt, math.exp(tok_loss / self.cum_cnt), self.cum_acc / self.cum_cnt)
         return desc

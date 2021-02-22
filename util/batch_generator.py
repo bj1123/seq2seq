@@ -8,6 +8,33 @@ import pickle
 from abc import *
 from torch.utils.data.dataset import Dataset, IterableDataset
 from torch.utils.data.dataloader import DataLoader
+from torchtext import data
+from multiprocessing import Process, Manager
+
+
+def max_tok_len(new, count, sofar):
+    """
+    In token batching scheme, the number of sequences is limited
+    such that the total number of src/tgt tokens (including padding)
+    in a batch <= batch_size
+    """
+    # Maintains the longest src and tgt length in the current batch
+    global max_src_in_batch, max_tgt_in_batch  # this is a hack
+    # Reset current longest length at a new batch (count=1)
+    if count == 1:
+        max_src_in_batch = 0
+        max_tgt_in_batch = 0
+    # Src: [<bos> w1 ... wN <eos>]
+    max_src_in_batch = max(max_src_in_batch, len(new.src_texts))
+    # Tgt: [w1 ... wM <eos>]
+    max_tgt_in_batch = max(max_tgt_in_batch, len(new.tgt_texts))
+    src_elements = count * max_src_in_batch
+    tgt_elements = count * max_tgt_in_batch
+    return max(src_elements, tgt_elements)
+
+
+def null_count(new, count, sofar):
+    return count
 
 
 class BaseBatchfier(IterableDataset):
@@ -52,7 +79,7 @@ class BaseBatchfier(IterableDataset):
     def batch_indice(self, df):
         num_buckets = len(df) // self.size + (len(df) % self.size != 0)
         bs = self.size
-        ind = [i*bs for i in range(num_buckets)]
+        ind = [i * bs for i in range(num_buckets)]
         if self.epoch_shuffle:
             random.shuffle(ind)
         return ind
@@ -62,6 +89,80 @@ class BaseBatchfier(IterableDataset):
 
     def to_iterator(self):
         return DataLoader(self, self.size, collate_fn=self.collate_fn)
+
+
+class TorchTextMT(data.Dataset):
+
+    @staticmethod
+    def sort_key(ex):
+        return data.interleave_keys(len(ex.src_texts), len(ex.tgt_texts))
+
+    def __init__(self, src_filepath, tgt_filepath, batch_size, padding_index, batch_criteria='token',
+                 epoch_shuffle=True, sampling_mode=False, device='cuda', **kwargs):
+        self.fields = [('src_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
+                  ('tgt_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
+                  ('src_len', data.Field(sequential=False, use_vocab=False)),
+                  ('tgt_len', data.Field(sequential=False, use_vocab=False))]
+        self.src = pd.read_pickle(src_filepath[0])  # temporary implementation.
+        self.tgt = pd.read_pickle(tgt_filepath[0])
+        self.padding_index = padding_index
+        self.batch_size = batch_size
+        self.batch_criteria = batch_criteria
+        self.epoch_shuffle = epoch_shuffle
+        self.sampling_mode = sampling_mode
+        self.device = device
+        examples = self.make_examples()
+        super(TorchTextMT, self).__init__(examples, self.fields, **kwargs)
+        batch_size_fn = max_tok_len if batch_criteria == 'token' else null_count
+        self.ds = data.BucketIterator(sort_within_batch=epoch_shuffle, shuffle=epoch_shuffle, dataset=self, device=device,
+                                      batch_size=batch_size, batch_size_fn=batch_size_fn, sort_key=self.sort_key)
+
+    def make_examples(self):
+        def examplify(partial_src, partial_tgt):
+            examples = [data.Example.fromlist(
+                    [partial_src.iloc[i].texts, partial_tgt.iloc[i].texts,
+                     len(partial_src.iloc[i].texts), len(partial_tgt.iloc[i].texts)],
+                    self.fields) for i in range(len(partial_src))]
+            l.extend(examples)
+
+        with Manager() as manager:
+            l = manager.list()
+            procs = []
+            num_thread = 16
+            data_per_thread = len(self.src) // num_thread
+            for i in range(num_thread + 1):
+                proc = Process(target=examplify, args=(self.src.iloc[i * data_per_thread:(i + 1) * data_per_thread],
+                                                       self.tgt.iloc[i * data_per_thread:(i + 1) * data_per_thread]))
+                procs.append(proc)
+                proc.start()
+            for proc in procs:
+                proc.join()
+            examples = list(l)
+        return examples
+
+    def batch_per_epoch(self):
+        if self.batch_criteria == 'token':
+            avg = sum([len(i) for i in self.src.texts]) / len(self.src)
+            avg_batch = self.batch_size / avg
+            print(avg_batch, len(self.src))
+            return int(len(self.src) / avg_batch)
+        else:
+            return int(len(self.src) / self.batch_size)
+
+    def iterator(self):
+        def reformat(batch):
+            return {'src': batch.src_texts,
+                    'src_len': batch.src_len,
+                    'tgt': batch.tgt_texts[:, :-1],
+                    'tgt_len': batch.tgt_len - 1,
+                    'label': batch.tgt_texts[:, 1:]}
+
+        self.ds.create_batches()
+        for sample in self.ds:
+            yield reformat(sample)
+
+    def to_iterator(self):
+        return self.iterator()
 
 
 class MTBatchfier(BaseBatchfier):
@@ -102,7 +203,7 @@ class MTBatchfier(BaseBatchfier):
                 df = self.sort(df)
             indice = self.batch_indice(df)
             for l in indice:
-                cur_batch = df.iloc[l:l+self.size]
+                cur_batch = df.iloc[l:l + self.size]
                 src_texts = cur_batch['src_texts'].tolist()
                 src_lens = cur_batch['src_lens'].tolist()
                 tgt_texts = cur_batch['tgt_texts'].tolist()
@@ -122,7 +223,7 @@ class MTBatchfier(BaseBatchfier):
         tgt_lens = torch.Tensor([item[3] for item in batch]).long()
         return {'src': src_texts.to(self.device),
                 'src_len': src_lens.to(self.device),
-                'tgt': tgt_texts.to(self.device)[:,:-1],
+                'tgt': tgt_texts.to(self.device)[:, :-1],
                 'tgt_len': tgt_lens.to(self.device) - 1,
                 'label': tgt_texts[:, 1:].to(self.device)}
 
@@ -133,7 +234,7 @@ class MultitaskBatchfier(BaseBatchfier):
                  criteria: str = 'tgt_lens', padding_index=30000, epoch_shuffle=True,
                  sampling_mode=False, mask_ratio=0.15, device='cuda'):
         super(MultitaskBatchfier, self).__init__(batch_size, seq_len, minlen, maxlen, criteria, padding_index,
-                                          epoch_shuffle, device)
+                                                 epoch_shuffle, device)
         self.df_paths = df_paths
         self.special_token_indice = special_token_indice  # tokenizer indice
         self.special_token_dic = {i: {j: idx for idx, j in enumerate(special_token_indice[i].keys())}
@@ -180,8 +281,8 @@ class MultitaskBatchfier(BaseBatchfier):
         dfs = list()
         dfs.append(pd.DataFrame({'src_texts': df.src, 'src_lens': src_len,
                                  'tgt_texts': df.tgt, 'tgt_lens': tgt_len, 'tasks': task_indice,
-                                 'src_languages':src_language_indice,
-                                 'tgt_languages':tgt_language_indice}))
+                                 'src_languages': src_language_indice,
+                                 'tgt_languages': tgt_language_indice}))
         if 'TRANSLATION' in task:
             dfs.append(pd.DataFrame({'src_texts': df.tgt, 'src_lens': tgt_len,
                                      'tgt_texts': df.src, 'tgt_lens': src_len, 'tasks': task_indice,
@@ -210,7 +311,7 @@ class MultitaskBatchfier(BaseBatchfier):
                     src_len = row.tgt_lens
                     src_lang = row.tgt_languages
                 else:
-                    i = random.randint(0,1)
+                    i = random.randint(0, 1)
                     if i:
                         src = row.tgt_texts
                         src_len = row.tgt_lens
@@ -226,7 +327,7 @@ class MultitaskBatchfier(BaseBatchfier):
                 src_languages.append(src_lang)
 
         return pd.DataFrame({'src_texts': tgts, 'src_lens': src_lens, 'tgt_texts': srcs, 'tgt_lens': src_lens,
-                             'tasks': [self.special_token_dic['task']['[TRANSLATION]']]*len(tgts),
+                             'tasks': [self.special_token_dic['task']['[TRANSLATION]']] * len(tgts),
                              'src_languages': src_languages, 'tgt_languages': src_languages})
 
     def initialize(self):
@@ -248,7 +349,7 @@ class MultitaskBatchfier(BaseBatchfier):
             df = self.sort(df)
         indice = self.batch_indice(df)
         for l in indice:
-            cur_batch = df.iloc[l:l+self.size]
+            cur_batch = df.iloc[l:l + self.size]
             tgt_languages = cur_batch['tgt_languages'].tolist()
             src_texts = cur_batch['src_texts'].tolist()
             src_lens = cur_batch['src_lens'].tolist()
@@ -278,9 +379,10 @@ class MultitaskBatchfier(BaseBatchfier):
                 'tgt_language': tgt_languages.to(self.device)}
 
 
-class MultitaskInferBatchfier(BaseBatchfier): # batchfy from raw text
-    def __init__(self, file_path, special_token_indice, tokenizer, batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 4096,
-                 padding_index=30000, device='cuda' ):
+class MultitaskInferBatchfier(BaseBatchfier):  # batchfy from raw text
+    def __init__(self, file_path, special_token_indice, tokenizer, batch_size: int = 32, seq_len=512, minlen=50,
+                 maxlen: int = 4096,
+                 padding_index=30000, device='cuda'):
         print(tokenizer)
         super(MultitaskInferBatchfier, self).__init__(batch_size, seq_len, minlen, maxlen,
                                                       None, padding_index, False, device)
@@ -311,7 +413,7 @@ class MultitaskInferBatchfier(BaseBatchfier): # batchfy from raw text
                                     tokenizer.token_to_id('<LENGTHRATIO_1.0>')]
             temp = [tokenizer.token_to_id('[KOREAN]'), tokenizer.token_to_id('[SIMPLIFICATION]')]
             lang = self.special_token_dic['language']['[KOREAN]']
-            yield prefix + access_control_token + text, len(text) + len(prefix + access_control_token),\
+            yield prefix + access_control_token + text, len(text) + len(prefix + access_control_token), \
                   temp + [tokenizer.token_to_id('[SOS]')], 3, lang
 
     def collate_fn(self, batch):
@@ -358,6 +460,7 @@ class ComplexityControlBatchfier(BaseBatchfier):
             text = np.array(text[1:])
             res = text > rare_ind
             return res.sum() / len(res)
+
         target_rare_rates = self.target_rare_rates + [1.0]
         text_rare_ratio = rare_ratio(text, self.rare_index)
         idx = 0
@@ -386,7 +489,7 @@ class ComplexityControlBatchfier(BaseBatchfier):
                 df = self.sort(df)
             indice = self.batch_indice(df)
             for l in indice:
-                cur_batch = df.iloc[l:l+self.size]
+                cur_batch = df.iloc[l:l + self.size]
                 src_texts = cur_batch['src_texts'].tolist()
                 src_lens = cur_batch['src_lens'].tolist()
                 tgt_texts = cur_batch['tgt_texts'].tolist()

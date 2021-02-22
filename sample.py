@@ -15,9 +15,12 @@ def get_batchfier(args):
         test_batchfier = FairTestBatchfier(args.dataset, args.batch_size * 4, device=args.device)
 
     elif args.task =='seq2seq':
-        test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, args.batch_size * 4, args.seq_len,
-                                 padding_index=args.padding_index, epoch_shuffle=False,
-                                 device=args.device, sampling_mode=True)
+        # test_batchfier = TorchTextMT(args.train_src_path, args.train_tgt_path, args.batch_size // args.update_step,
+        #                               padding_index=args.padding_index, device=args.device,
+        #                               epoch_shuffle=False, sampling_mode=True)
+        test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, 128,
+                                     padding_index=args.padding_index, epoch_shuffle=False,
+                                     device=args.device, sampling_mode=True)
     return test_batchfier.to_iterator()
 
 
