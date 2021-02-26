@@ -215,6 +215,9 @@ class Sampler:
             self.pre_encode(inp)
             for _ in range(max_len):
                 cnt += 1
+                # print('-------'*10)
+                # if cnt ==3:
+                #     break
                 out = self.model(inp)
                 no_eos = cnt <= 5
                 if cnt == 1:

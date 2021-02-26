@@ -60,7 +60,8 @@ class SentenceAwareDecoderBlock(DecoderBlock):
                  **kwargs):
         super(SentenceAwareDecoderBlock, self).__init__(hidden_dim, projection_dim, n_heads, head_dim,
                                                         dropout_rate, dropatt_rate, pre_lnorm, att_module)
-        self.sentence_att = att_module(hidden_dim, n_heads, head_dim, dropout_rate, dropatt_rate, pre_lnorm, **kwargs)
+        self.sentence_att = SentenceAwareAtt(hidden_dim, n_heads, head_dim, dropout_rate,
+                                             dropatt_rate, pre_lnorm, **kwargs)
 
     def forward(self, inp, *args):
         src, tgt, tgt_mem, tgt_mask, tgt_to_src_mask, tgt_emb = inp
@@ -70,7 +71,7 @@ class SentenceAwareDecoderBlock(DecoderBlock):
             tgt_mem_self, tgt_mem_sent = tgt_mem.chunk(2, dim=-1)
         out, new_tgt_mem_self, self_att_prob = self.self_att(tgt, tgt, tgt_mem_self, tgt_mask, *args)
         tgt_emb, new_tgt_mem_sent, _ = self.sentence_att(tgt_emb, tgt, tgt_mem_sent, tgt_mask, *args)
-        out, _, inter_att_prob = self.multihead_att(out + tgt_emb, src, None, tgt_to_src_mask,
+        out, _, inter_att_prob = self.multihead_att(out - tgt_emb, src, None, tgt_to_src_mask,
                                                     *args)  # if src is None, this step is skipped
         out = self.feedforward(out)
         return out, torch.cat([new_tgt_mem_self, new_tgt_mem_sent], dim=-1), self_att_prob, inter_att_prob
@@ -111,6 +112,7 @@ class BaseNetwork(nn.Module):
         self.main_nets = nn.ModuleList([block_type(hidden_dim, projection_dim, n_heads, head_dim,
                                                    dropout_rate, dropatt_rate, pre_lnorm, pos_encs[i], **key_args)
                                         for i in range(n_layers)])
+
 
     def get_mask(self, mem, inp_lens):
         inp_masks = mask_lengths(inp_lens, reverse=True).byte()
@@ -237,7 +239,7 @@ class EncoderDecoderModel(nn.Module):
         self.pos_enc = pos_enc
         self.encoder = EncoderNetwork(hidden_dim, projection_dim, n_heads, head_dim, enc_num_layers, dropout_rate,
                                       dropatt_rate, pre_lnorm, same_lengths, pos_enc,
-                                      **self.keyward_dict())
+                                      **self.keyword_dict())
         self.decoder = self.build_decoder_network()
         if self.tie_embedding:
             embedding_weight = self.decoder.embedding.word_embedding.weight
@@ -246,7 +248,7 @@ class EncoderDecoderModel(nn.Module):
         else:
             self.final = nn.Linear(hidden_dim, vocab_size, bias=False)  # To-Do : implement tie embedding
 
-    def keyward_dict(self):
+    def keyword_dict(self):
         kwargs_dict = {'vocab_size': self.vocab_size, 'seq_len': self.seq_len, 'padding_index': self.padding_index}
         if self.shared_embedding and hasattr(self, 'encoder'):
             kwargs_dict['embedding'] = self.encoder.embedding
@@ -256,7 +258,7 @@ class EncoderDecoderModel(nn.Module):
 
         return DecoderNetwork(self.hidden_dim, self.projection_dim, self.n_heads, self.head_dim, self.dec_num_layers,
                               self.dropout_rate, self.dropatt_rate, self.pre_lnorm, self.same_lengths,
-                              self.pos_enc, decoder_block=block_type, **self.keyward_dict())
+                              self.pos_enc, decoder_block=block_type, **self.keyword_dict())
 
     def encode_src(self, inp):
         src, src_len = inp['src'], inp['src_len']
@@ -429,8 +431,8 @@ class SentenceAwareModel(EncoderDecoderModel):
         self.tgt_emb_prediction = nn.Sequential(nn.Linear(hidden_dim, hidden_dim * 4), nn.ReLU(),
                                                 nn.Linear(hidden_dim * 4, hidden_dim),
                                                 nn.LayerNorm(hidden_dim, elementwise_affine=False))
-        self.tgt_encoder = TextConv(vocab_size, hidden_dim, hidden_dim // 4,
-                                    dropout=dropout_rate, padding_idx=padding_index)
+        self.tgt_encoder = TextConv(hidden_dim, hidden_dim // 4,
+                                    dropout=dropout_rate, padding_idx=padding_index, **self.keyword_dict())
         # self.tgt_encoder = EncoderNetwork(hidden_dim, projection_dim, n_heads, head_dim, enc_num_layers, dropout_rate,
         #                                   dropatt_rate, pre_lnorm, same_lengths, rel_att,
         #                                   vocab_size=vocab_size, seq_len=seq_len, padding_index=padding_index)

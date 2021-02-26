@@ -100,9 +100,9 @@ class SentenceAwareLoss(BaseLoss):
         super(SentenceAwareLoss, self).__init__()
         self.main_loss = main_loss
         self.aux_lambda = auxiliary_lambda
-        # self.criteria = torch.nn.L1Loss()
+        self.criteria = torch.nn.L1Loss(reduction='none')
         # self.criteria = torch.nn.MSELoss()
-        self.criteria = torch.nn.MSELoss(reduction='none')
+        # self.criteria = torch.nn.MSELoss(reduction='none')
 
     def forward(self, out, inp):
         main_loss = self.main_loss(out, inp)

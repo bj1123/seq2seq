@@ -95,10 +95,6 @@ class Trainer:
                 description = criteria.get_description()
                 description = self.update_description(description, n_bar)
                 pbar.set_description(description)
-                # pbar.set_description(
-                #     "training loss : %f training ppl : %f, lr : %f, iter : %d" % (
-                #         step_loss / (self.update_step *pbar_cnt), math.exp(step_loss / (self.update_step*pbar_cnt)),
-                #          scheduler.get_last_lr()[0], n_bar), )
                 pbar.update()
                 if pbar_cnt == 100:
                     pbar, n_bar, pbar_cnt, step_loss, acc = reset_pbar(pbar, n_bar)

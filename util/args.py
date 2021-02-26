@@ -96,10 +96,10 @@ class MTArgument(BaseArgument):
     def load_files(self, data):
         model_type = data['model_type']
         dirname = os.path.join('data', 'saved_model', data['dataset_name'], model_type)
-        basename = '{}_{}'.format(data['model_size'], data['learning_rate'])
+        basename = '{}_{}_{}'.format(data['model_size'], data['learning_rate'], data['positional_encoding'])
         # for debugging
-        data['train_src_path'] = files_including(data['src_path'], 'train')
-        data['train_tgt_path'] = files_including(data['tgt_path'], 'train')
+        data['train_src_path'] = files_including(data['src_path'], 'valid')
+        data['train_tgt_path'] = files_including(data['tgt_path'], 'valid')
         data['test_src_path'] = files_including(data['src_path'], 'test')
         data['test_tgt_path'] = files_including(data['tgt_path'], 'test')
         data['padding_index'] = data['vocab_size'] - 1

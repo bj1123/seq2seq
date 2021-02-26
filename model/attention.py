@@ -33,9 +33,9 @@ class AttBase(nn.Module, ABC):
         # score.masked_fill_(encoder_mask.unsqueeze(1), -6e4)
         return score
 
-    def attend(self, query, key, value, mask):
+    def attend(self, query, key, value, mask, **kwargs):
         bs, qs = query.size()[:2]
-        score = self.compute_score(query, key)
+        score = self.compute_score(query, key, **kwargs)
         score = self.mask(score, mask)
         attended = self.linear_combine(score, value)
 
@@ -43,7 +43,7 @@ class AttBase(nn.Module, ABC):
         out = self.dropout(out)
         return out, score
 
-    def compute_score(self, query, key):
+    def compute_score(self, query, key, **kwargs):
         bs, qs, hs = query.size()
         ks = key.size(1)
 
@@ -82,13 +82,16 @@ class AttBase(nn.Module, ABC):
             return q, None
         if mem is None:
             mem = torch.Tensor().to(device=kv.device, dtype=kv.dtype)
+            ml = 0
+        else:
+            ml = mem.size(1)
 
         if self.pre_lnorm:
             kv = self.layer_norm(kv)
             q = self.layer_norm(q)
 
         kv, query, key, value = self.projection(q, kv, mem)
-        out, att_prob = self.attend(query, key, value, mask)
+        out, att_prob = self.attend(query, key, value, mask, memory_length=ml)
         return query, out, kv, att_prob
 
 
@@ -99,7 +102,7 @@ class MultiheadAtt(AttBase):
 
     def forward(self, q, kv, mem, mask):
         query, out, kv, att_prob = self.before_add(q, kv, mem, mask)
-        out = query + out
+        out = out + query
         if not self.pre_lnorm:
             out = self.layer_norm(out)
         return out, kv, att_prob
@@ -107,13 +110,13 @@ class MultiheadAtt(AttBase):
 
 class SentenceAwareAtt(MultiheadAtt):
     def __init__(self, hidden_dim:int, n_head:int, head_dim:int,
-                 dropout_rate:float, dropatt_rate:float=0.0, pre_lnorm=False):
-        super(SentenceAwareAtt, self).__init__(hidden_dim, n_head, head_dim, dropout_rate, dropatt_rate, pre_lnorm)
-        self.proj = nn.Sequential(nn.Linear(hidden_dim, hidden_dim), nn.ReLU())
+                 dropout_rate:float, dropatt_rate:float=0.0, pre_lnorm=False, **kwargs):
+        super(SentenceAwareAtt, self).__init__(hidden_dim, n_head, head_dim, dropout_rate,
+                                               dropatt_rate, pre_lnorm, **kwargs)
+        self.proj = nn.Sequential(nn.Linear(hidden_dim, hidden_dim), nn.ReLU())  # to delete
 
     def forward(self, q, kv, mem, mask):
         query, out, kv, att_prob = self.before_add(q, kv, mem, mask)
-        out = out - query
         out = self.proj(out)
         if not self.pre_lnorm:
             out = self.layer_norm(out)
@@ -160,9 +163,9 @@ class RelMultiheadAtt(AttBase):
         relative_buckets += torch.where(is_small, relative_position, relative_postion_if_large)
         return relative_buckets
 
-    def compute_bias(self, query_length, key_length):
+    def compute_bias(self, query_length, key_length, memory_length):
         """ Compute binned relative position bias """
-        context_position = torch.arange(query_length, dtype=torch.long)[:, None]
+        context_position = torch.arange(query_length, dtype=torch.long)[:, None] + memory_length
         memory_position = torch.arange(key_length, dtype=torch.long)[None, :]
         relative_position = memory_position - context_position  # shape (query_length, key_length)
         relative_position_bucket = self._relative_position_bucket(
@@ -175,12 +178,13 @@ class RelMultiheadAtt(AttBase):
         values = self.relative_attention_bias(relative_position_bucket)[None]  # shape (query_length, key_length, num_heads)
         return values
 
-    def compute_score(self, query, key):
+    def compute_score(self, query, key, **kwargs):
         score = super().compute_score(query, key)
         ql = query.size(1)
         kl = key.size(1)
-        position_bias = self.compute_bias(ql, kl)
-        return score + position_bias
+        ml = kwargs.get('memory_length')
+        position_bias = self.compute_bias(ql, kl, ml)
+        return score * (self.head_dim ** 0.5) + position_bias
 
     def forward(self, q, kv, mem, mask):
         query, out, kv, att_prob = self.before_add(q, kv, mem, mask)
@@ -236,10 +240,13 @@ class GraphRelMultiheadAtt(AttBase):
     def graph_att(self, q, k, graph_mem, mask):
         if graph_mem is None:
             graph_mem = torch.Tensor().to(device=k.device, dtype=k.dtype)
+            ml = 0
+        else:
+            ml = graph_mem.size(1)
         graph_new_mem = k
         k = torch.cat([graph_mem,k],1)
         qs, ks = q.size(1), k.size(1)
-        context_position = torch.arange(qs, dtype=torch.long, device=q.device)[:, None]
+        context_position = torch.arange(qs, dtype=torch.long, device=q.device)[:, None] + ml
         memory_position = torch.arange(ks, dtype=torch.long, device=q.device)[None, :]
         relative_position = memory_position - context_position  # shape (query_length, key_length)
         dist = self._get_distance(
@@ -262,7 +269,7 @@ class GraphRelMultiheadAtt(AttBase):
             graph_mem, plain_mem = mem[..., -512:], mem[..., :-512]
         graph_out, graph_new_mem = self.graph_att(q, kv, graph_mem, mask)
         query, out, plain_new_mem, att_prob = super().before_add(q, kv, plain_mem, mask)  # from plain transformer
-        new_mem = torch.cat([plain_new_mem,graph_new_mem], -1)
+        new_mem = torch.cat([plain_new_mem, graph_new_mem], -1)
         return query, out, new_mem, att_prob, graph_out
 
     def forward(self, q, kv, mem, mask):

@@ -94,7 +94,6 @@ def get_loss(args, train_batchfier):
         loss = ComplexityLoss(loss)
     elif args.model_type == 'sentence-aware':
         loss = SentenceAwareLoss(loss)
-    print(type(loss))
     return loss
 
 
@@ -106,7 +105,6 @@ def get_trainer(args, model, train_batchfier, test_batchfier):
         print('mixed_precision')
         opt_level = 'O2'
         model, optimizer = apex.amp.initialize(model, optimizer, opt_level=opt_level)
-    print(train_batchfier.batch_per_epoch())
     decay_step = train_batchfier.batch_per_epoch() * args.n_epoch // args.update_step
     scheduler = WarmupLinearSchedule(optimizer, args.warmup_step, decay_step, args.decay_on_valid)
     # scheduler = WarmupExponentialSchedule(optimizer, args.warmup_step, len(train_batchfier) // args.update_step)
@@ -126,6 +124,7 @@ def main_pure_torch(args):
 
     model_parameters = filter(lambda p: p.requires_grad, model.parameters())
     params = sum([np.prod(p.size()) for p in model_parameters])
+    print(model)
     print('# params : {}'.format(params))
     if not os.path.exists(args.savename):
         os.makedirs(args.savename)

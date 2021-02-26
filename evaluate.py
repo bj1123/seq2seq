@@ -1,4 +1,3 @@
-import nltk
 import numpy as np
 import argparse
 import pandas as pd
@@ -12,20 +11,29 @@ def get_args():
     return parser.parse_args()
 
 
-def compute_bleu(gts, samples):
-    res = []
-    for gt, sample in zip(gts, samples):
-        res.append(nltk.translate.bleu([gt[1:-1]], sample[:-1]))
-    return np.mean(res)
+def tos(l):
+    return ' '.join(map(str,l))
+
+
+def tos2(l):
+    return ' '.join(map(str,l[1:-1]))
+
+
+def save(l, path):
+    with open(path,'w') as f:
+        for i in l:
+            f.write(i + '\n')
 
 
 def main():
     args = get_args()
-    df = pd.read_pickle(args.gt_path)
+    gt = pd.read_pickle(args.gt_path)
     samples = load_json(args.sample_path)
-    bleu = compute_bleu(df.texts.tolist(), samples)
-    return bleu
+    res = list(map(tos, samples))
+    save(res, 'sampled.txt')
+    res2 = list(map(tos2, gt.texts))
+    save(res2, 'gt.txt')
 
 
 if __name__ == '__main__':
-    print(main())
+    main()
