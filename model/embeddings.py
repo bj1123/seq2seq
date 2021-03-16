@@ -172,10 +172,11 @@ class OneEmbed(nn.Module):
             self.masklist = [torch.bernoulli(prob) for _ in range(codebooknum)]
         else:
             mean_m = torch.zeros(codenum, embedding_dim)
-            std_m = torch.Tensor(codenum, embedding_dim)
+            std_m = nn.Parameter(torch.Tensor(codenum, embedding_dim), requires_grad=False)
             nn.init.constant_(std_m, std * (codebooknum ** -0.5))
             self.masklist = [torch.normal(mean_m, std_m) for _ in range(codebooknum)]
-        self.hash2mask = torch.randint(0, codenum, (num_embeddings, codebooknum), dtype=torch.long)
+        self.hash2mask = nn.Parameter(torch.randint(0, codenum, (num_embeddings, codebooknum), dtype=torch.long),
+                                      requires_grad=False)
         self.mask = self.construct_mask2each_token() #mask for each token
 
 
