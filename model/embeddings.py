@@ -178,6 +178,7 @@ class OneEmbed(nn.Module):
         self.hash2mask = torch.randint(0, codenum, (num_embeddings, codebooknum), dtype=torch.long)
         self.mask = self.construct_mask2each_token() #mask for each token
 
+
     def construct_mask2each_token(self):
         mask = []
         for i in range(self.hash2mask.size(1)):
@@ -211,7 +212,8 @@ class HashEmbedding(nn.Module):
         self.pool = nn.Embedding(pool_size, embedding_dim)
         self.import_params = nn.Parameter(torch.Tensor(num_embeddings, num_hash))
         nn.init.constant_(self.import_params, 0.5)
-        self.hash_values = torch.randint(0, pool_size, (num_embeddings, num_hash), dtype=torch.long)
+        self.hash_values = nn.Parameter(torch.randint(0, pool_size, (num_embeddings, num_hash), dtype=torch.long),
+                                        requires_grad=False)
 
     def forward(self, input):
         if input.is_cuda and not self.hash_values.is_cuda:
