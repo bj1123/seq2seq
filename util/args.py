@@ -12,6 +12,8 @@ def get_args():
     parents_args, _ = parser.parse_known_args()
     if parents_args.task == 'seq2seq':
         args = MTArgument(parser, is_train=not parents_args.is_sampling)
+    elif parents_args.task == 'mnmt':
+        args = MNMTArgument(parser, is_train=not parents_args.is_sampling)
     elif parents_args.task == 'multitask':
         args = MultitaskArgument(parser, is_train=not parents_args.is_sampling)
     elif parents_args.task == 'access':
@@ -42,7 +44,7 @@ class BaseArgument(ABC):
         self.load_files(data)
         self.__dict__ = data
 
-    def get_common_args(self):
+    def get_common_args(self, is_test=False):
         parser = self.parents_args
         parser.add_argument('--saved-model-folder', type=str)
         parser.add_argument('--saved-model-ckpt', type=str)
@@ -52,6 +54,11 @@ class BaseArgument(ABC):
                                                 " losses that will be implemented in the future]",
                             type=str)
         parser.add_argument('--positional-encoding', type=str, default='absolute')
+        if is_test:
+            parser.add_argument('--sampling-mode', type=str)
+            parser.add_argument('--width', type=int)
+            parser.add_argument('--temperature', type=float, default=1.0)
+            parser.add_argument('--lengths-penalty', type=float, default=1.0)
 
         return parser
 
@@ -79,7 +86,7 @@ class MTArgument(BaseArgument):
         return res
 
     def get_args(self, is_test=False):
-        parser = self.get_common_args()
+        parser = self.get_common_args(is_test)
         parser.add_argument("--src-path", type=str)
         parser.add_argument("--tgt-path", type=str)
         parser.add_argument("--dataset-name", type=str)
@@ -87,10 +94,6 @@ class MTArgument(BaseArgument):
         parser.add_argument("--model-checkpoint", help="transfer for finetune model", default="", type=str)
         if is_test:
             parser.add_argument('--sample-save-path', type=str)
-            parser.add_argument('--sampling-mode', type=str)
-            parser.add_argument('--width', type=int)
-            parser.add_argument('--temperature', type=float, default=1.0)
-            parser.add_argument('--lengths-penalty', type=float, default=1.0)
         return parser
 
     def load_files(self, data):
@@ -98,8 +101,8 @@ class MTArgument(BaseArgument):
         dirname = os.path.join('data', 'saved_model', data['dataset_name'], model_type)
         basename = '{}_{}_{}'.format(data['model_size'], data['learning_rate'], data['positional_encoding'])
         # for debugging
-        data['train_src_path'] = files_including(data['src_path'], 'valid')
-        data['train_tgt_path'] = files_including(data['tgt_path'], 'valid')
+        data['train_src_path'] = files_including(data['src_path'], 'train')
+        data['train_tgt_path'] = files_including(data['tgt_path'], 'train')
         data['test_src_path'] = files_including(data['src_path'], 'test')
         data['test_tgt_path'] = files_including(data['tgt_path'], 'test')
         data['padding_index'] = data['vocab_size'] - 1
@@ -144,7 +147,7 @@ class MultitaskArgument(BaseArgument):
         symbols = MultiTaskTokenizer.default_special_tokens
         symbol_dic = {i: tokenizer.token_to_id(i) for i in symbols}
 
-        indice = {'language':language_dic, 'task':task_dic, 'symbols':symbol_dic}
+        indice = {'language': language_dic, 'task': task_dic, 'symbols': symbol_dic}
         return indice
 
     def get_args(self, is_test=False):
@@ -171,6 +174,39 @@ class MultitaskArgument(BaseArgument):
                               for i in file_paths.keys()}
         data['test_path'] = {i: list(filter(lambda k: 'test' in os.path.basename(k), file_paths[i]))
                               for i in file_paths.keys()}
+        data['padding_index'] = data['vocab_size'] - 1
+        data['savename'] = os.path.join(dirname, basename)
+        if data['saved_model_folder'] and data['saved_model_ckpt']:
+            data['load_path'] = os.path.join(data['saved_model_folder'], data['saved_model_ckpt'])
+
+
+class MNMTArgument(BaseArgument):
+    def __init__(self, parents_args, path='config', is_train=True):
+        super(MNMTArgument, self).__init__(parents_args, path, is_train)
+
+    def get_args(self, is_test=False):
+        parser = self.get_common_args(is_test)
+        parser.add_argument("--dir-path", type=str)
+        parser.add_argument("--dataset-name", type=str)
+        if is_test:
+            parser.add_argument('--sample-save-path', type=str)
+        return parser
+
+    def pair_files(self, dir_path, target_name='train'):
+        dirs = os.listdir(dir_path)
+        res = []
+        for i in dirs:
+            x = files_including(os.path.join(dir_path, i), target_name)
+            res.append(x)
+        return res
+
+    def load_files(self, data):
+        model_type = data['model_type']
+        dirname = os.path.join('data', 'saved_model', data['dataset_name'], model_type)
+        basename = '{}_{}_{}'.format(data['model_size'], data['learning_rate'], data['positional_encoding'])
+        # for debugging
+        data['train_path'] = self.pair_files(data['dir_path'], 'train')
+        data['test_path'] = self.pair_files(data['dir_path'], 'test')
         data['padding_index'] = data['vocab_size'] - 1
         data['savename'] = os.path.join(dirname, basename)
         if data['saved_model_folder'] and data['saved_model_ckpt']:

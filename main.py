@@ -15,7 +15,7 @@ def get_model(args):
           args.projection_dim, args.n_heads,
           args.head_dim, args.n_enc_layers, args.n_dec_layers, args.dropout_rate,
           args.dropatt_rate, args.padding_index, args.shared_embedding, args.tie_embedding)
-    if args.task in ('seq2seq', 'access'):
+    if args.task in ('seq2seq', 'access', 'mnmt'):
         if args.model_type == 'complexity-aware':
             model = ComplexityAwareModel(args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim,
                                          args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
@@ -61,14 +61,25 @@ def get_batchfier(args):
                                                         args.batch_size, args.seq_len,
                                                         padding_index=args.padding_index, device=args.device)
         else:
-            train_batchfier = TorchTextMT(args.train_src_path, args.train_tgt_path, args.batch_size // args.update_step,
-                                          padding_index=args.padding_index, device=args.device)
-            test_batchfier = TorchTextMT(args.test_src_path, args.train_tgt_path, args.batch_size // args.update_step,
-                                         padding_index=args.padding_index, epoch_shuffle=False, device=args.device)
-            # train_batchfier = MTBatchfier(args.train_src_path, args.train_tgt_path, args.batch_size, args.seq_len,
-            #                               padding_index=args.padding_index, device=args.device)
-            # test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, args.batch_size, args.seq_len,
-            #                              padding_index=args.padding_index, device=args.device)
+            train_batchfier = TorchTextMTMono(args.train_src_path, args.train_tgt_path,
+                                              args.batch_size // args.update_step, padding_index=args.padding_index,
+                                              maxlen=args.seq_len, device=args.device)
+            test_batchfier = TorchTextMTMono(args.test_src_path, args.train_tgt_path,
+                                             args.batch_size // args.update_step,
+                                             padding_index=args.padding_index, maxlen=args.seq_len,
+                                             epoch_shuffle=False, device=args.device)
+    elif args.task == 'mnmt':
+        train_batchfier = TorchTextMTMulti(args.train_path,
+                                           args.batch_size // args.update_step, padding_index=args.padding_index,
+                                           maxlen=args.seq_len, device=args.device)
+        test_batchfier = TorchTextMTMulti(args.test_path,
+                                          args.batch_size // args.update_step,
+                                          padding_index=args.padding_index, maxlen=args.seq_len,
+                                          epoch_shuffle=False, device=args.device)
+        # train_batchfier = MTBatchfier(args.train_src_path, args.train_tgt_path, args.batch_size, args.seq_len,
+        #                               padding_index=args.padding_index, device=args.device)
+        # test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, args.batch_size, args.seq_len,
+        #                              padding_index=args.padding_index, device=args.device)
     elif args.task == 'multitask':
         train_batchfier = MultitaskBatchfier(args.train_path, args.special_token_indice, args.batch_size, args.seq_len,
                                              padding_index=args.padding_index, device=args.device)

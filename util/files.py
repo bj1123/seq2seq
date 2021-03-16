@@ -11,6 +11,17 @@ def down_pickle_protocol(path):
     old.to_pickle(path, protocol=4)
 
 
+def maybe_read(filename):
+    if filename.endswith('.pkl'):
+        return pd.read_pickle(filename)
+    elif filename.endswith('.pq'):
+        return pd.read_parquet(filename)
+    elif filename.endswith('.feather'):
+        return pd.read_feather(filename)
+    else:
+        raise NotImplementedError
+
+
 def get_files(path):
     paths = []
     if os.path.isfile(path):

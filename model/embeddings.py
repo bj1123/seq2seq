@@ -131,7 +131,10 @@ class TransformerEmbedding(nn.Module):
         self.use_pos_emb = use_pos_emb
         self.seq_len = max_seqlen
 
-        self.word_embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=padding_index)
+        # self.word_embedding = OneEmbed(vocab_size, embedding_dim, padding_index,
+        #                                one_emb_type='real', dropout=dropout_rate)
+        self.word_embedding = HashEmbedding(vocab_size, embedding_dim, padding_index)
+        # self.word_embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=padding_index)
         if self.use_pos_emb:
             self.posisition_embedding = nn.Embedding(max_seqlen, embedding_dim)
         self.dropout = nn.Dropout(dropout_rate)
@@ -148,3 +151,73 @@ class TransformerEmbedding(nn.Module):
             emb = pos_ebd + emb
         emb = self.dropout(emb)
         return emb
+
+
+class OneEmbed(nn.Module):
+    def __init__(self, num_embeddings, embedding_dim, padding_idx,
+                 one_emb_type='binary', dropout=0.5, std=1.0, codenum=64, codebooknum=8,
+                 layernum=1, binary_dropout=0.1):
+        super(OneEmbed, self).__init__()
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
+        self.one_emb_type = one_emb_type
+        self.layernum = layernum
+        self.padding_idx = padding_idx
+        self.weight = nn.Parameter(torch.Tensor(1, embedding_dim)) #embedding for all tokens
+        nn.init.normal_(self.weight, std=0.02)
+        self.linear = nn.Sequential(nn.Linear(embedding_dim, embedding_dim), nn.ReLU(), nn.Dropout(dropout))
+        if self.one_emb_type == 'binary':
+            prob = torch.Tensor(codenum, embedding_dim)
+            nn.init.constant_(prob, (1 - binary_dropout ** (1.0 / codebooknum)))
+            self.masklist = [torch.bernoulli(prob) for _ in range(codebooknum)]
+        else:
+            mean_m = torch.zeros(codenum, embedding_dim)
+            std_m = torch.Tensor(codenum, embedding_dim)
+            nn.init.constant_(std_m, std * (codebooknum ** -0.5))
+            self.masklist = [torch.normal(mean_m, std_m) for _ in range(codebooknum)]
+        self.hash2mask = torch.randint(0, codenum, (num_embeddings, codebooknum), dtype=torch.long)
+        self.mask = self.construct_mask2each_token() #mask for each token
+
+    def construct_mask2each_token(self):
+        mask = []
+        for i in range(self.hash2mask.size(1)):
+            token_hash = self.hash2mask[:, i]
+            mask.append(nn.functional.embedding(token_hash, self.masklist[i]))
+        mask = sum(mask)
+        if self.one_emb_type == 'binary':
+            mask.clamp_(0, 1)
+        return mask
+
+    def construct_matrix_for_output_layer(self):
+        vocab_vec = self.mask.new(range(self.num_embeddings)).long()
+        matrix = self.forward(vocab_vec, dropout=0)
+        return matrix
+
+    def forward(self, input):
+        if input.is_cuda and not self.mask.is_cuda:
+            self.mask = self.mask.cuda().to(torch.half)
+        each_token_mask = nn.functional.embedding(input, self.mask, padding_idx=self.padding_idx)
+        embed = each_token_mask * self.weight.expand_as(each_token_mask)
+        embed = self.linear(embed)
+        return embed
+
+
+class HashEmbedding(nn.Module):
+    def __init__(self, num_embeddings, embedding_dim, padding_idx, pool_size=1000, num_hash=2):
+        super(HashEmbedding, self).__init__()
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
+        self.padding_idx = padding_idx
+        self.pool = nn.Embedding(pool_size, embedding_dim)
+        self.import_params = nn.Parameter(torch.Tensor(num_embeddings, num_hash))
+        nn.init.constant_(self.import_params, 0.5)
+        self.hash_values = torch.randint(0, pool_size, (num_embeddings, num_hash), dtype=torch.long)
+
+    def forward(self, input):
+        if input.is_cuda and not self.hash_values.is_cuda:
+            self.hash_values = self.hash_values.cuda()
+        hash_values = nn.functional.embedding(input, self.hash_values, padding_idx=self.padding_idx)
+        import_params = nn.functional.embedding(input, self.import_params, padding_idx=self.padding_idx)  # [bs, l, n_h]
+        embed = self.pool(hash_values)  # [bs, l, num_hash, embedding_dim]
+        embed = (import_params.unsqueeze(-1) * embed).sum(2)
+        return embed

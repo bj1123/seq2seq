@@ -10,6 +10,14 @@ from torch.utils.data.dataset import Dataset, IterableDataset
 from torch.utils.data.dataloader import DataLoader
 from torchtext import data
 from multiprocessing import Process, Manager
+from util.files import maybe_read
+
+
+def truncate(inp, maxlen):
+    if len(inp) < maxlen:
+        return inp
+    else:
+        return inp[:maxlen]
 
 
 def max_tok_len(new, count, sofar):
@@ -91,48 +99,53 @@ class BaseBatchfier(IterableDataset):
         return DataLoader(self, self.size, collate_fn=self.collate_fn)
 
 
-class TorchTextMT(data.Dataset):
+class TorchTextMTBase(data.Dataset, ABC):
 
     @staticmethod
     def sort_key(ex):
         return data.interleave_keys(len(ex.src_texts), len(ex.tgt_texts))
 
-    def __init__(self, src_filepath, tgt_filepath, batch_size, padding_index, batch_criteria='token',
+    def __init__(self, batch_size, padding_index, maxlen=512, batch_criteria='token',
                  epoch_shuffle=True, sampling_mode=False, device='cuda', **kwargs):
         self.fields = [('src_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
                   ('tgt_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
                   ('src_len', data.Field(sequential=False, use_vocab=False)),
                   ('tgt_len', data.Field(sequential=False, use_vocab=False))]
-        self.src = pd.read_pickle(src_filepath[0])  # temporary implementation.
-        self.tgt = pd.read_pickle(tgt_filepath[0])
         self.padding_index = padding_index
         self.batch_size = batch_size
         self.batch_criteria = batch_criteria
         self.epoch_shuffle = epoch_shuffle
         self.sampling_mode = sampling_mode
         self.device = device
-        examples = self.make_examples()
-        super(TorchTextMT, self).__init__(examples, self.fields, **kwargs)
+        self.maxlen = maxlen
+        self.examples = self.make_examples()
+        super(TorchTextMTBase, self).__init__(self.examples, self.fields, **kwargs)
         batch_size_fn = max_tok_len if batch_criteria == 'token' else null_count
         self.ds = data.BucketIterator(sort_within_batch=epoch_shuffle, shuffle=epoch_shuffle, dataset=self, device=device,
                                       batch_size=batch_size, batch_size_fn=batch_size_fn, sort_key=self.sort_key)
 
+    @abstractmethod
     def make_examples(self):
-        def examplify(partial_src, partial_tgt):
-            examples = [data.Example.fromlist(
-                    [partial_src.iloc[i].texts, partial_tgt.iloc[i].texts,
-                     len(partial_src.iloc[i].texts), len(partial_tgt.iloc[i].texts)],
-                    self.fields) for i in range(len(partial_src))]
+        pass
+
+    def examplify(self, src, tgt):
+        def partial_examplify(partial_src, partial_tgt):
+            def to_list(idx):
+                src = truncate(partial_src.iloc[idx].texts, self.maxlen)
+                tgt = truncate(partial_tgt.iloc[idx].texts, self.maxlen)
+                return [src, tgt, len(src), len(tgt)]
+
+            examples = [data.Example.fromlist(to_list(i), self.fields) for i in range(len(partial_src))]
             l.extend(examples)
 
         with Manager() as manager:
             l = manager.list()
             procs = []
             num_thread = 16
-            data_per_thread = len(self.src) // num_thread
+            data_per_thread = len(src) // num_thread
             for i in range(num_thread + 1):
-                proc = Process(target=examplify, args=(self.src.iloc[i * data_per_thread:(i + 1) * data_per_thread],
-                                                       self.tgt.iloc[i * data_per_thread:(i + 1) * data_per_thread]))
+                proc = Process(target=partial_examplify, args=(src.iloc[i * data_per_thread:(i + 1) * data_per_thread],
+                                                               tgt.iloc[i * data_per_thread:(i + 1) * data_per_thread]))
                 procs.append(proc)
                 proc.start()
             for proc in procs:
@@ -142,11 +155,11 @@ class TorchTextMT(data.Dataset):
 
     def batch_per_epoch(self):
         if self.batch_criteria == 'token':
-            avg = sum([len(i) for i in self.src.texts]) / len(self.src)
+            avg = sum([i.tgt_len for i in self.examples]) / len(self.examples)
             avg_batch = self.batch_size / avg
-            return int(len(self.src) / avg_batch)
+            return int(len(self.examples) / avg_batch)
         else:
-            return int(len(self.src) / self.batch_size)
+            return int(len(self.examples) / self.batch_size)
 
     def iterator(self):
         def reformat(batch):
@@ -164,6 +177,42 @@ class TorchTextMT(data.Dataset):
         return self.iterator()
 
 
+class TorchTextMTMono(TorchTextMTBase):
+    def __init__(self, src_filepath, tgt_filepath, batch_size, padding_index, maxlen=512, batch_criteria='token',
+                 epoch_shuffle=True, sampling_mode=False, device='cuda', **kwargs):
+        self.fields = [('src_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
+                  ('tgt_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
+                  ('src_len', data.Field(sequential=False, use_vocab=False)),
+                  ('tgt_len', data.Field(sequential=False, use_vocab=False))]
+        self.src = maybe_read(src_filepath[0])  # temporary implementation.
+        self.tgt = maybe_read(tgt_filepath[0])
+        super(TorchTextMTMono, self).__init__(batch_size, padding_index, maxlen, batch_criteria, epoch_shuffle,
+                                              sampling_mode, device, **kwargs)
+
+    def make_examples(self):
+        return self.examplify(self.src, self.tgt)
+
+
+class TorchTextMTMulti(TorchTextMTBase):
+    def __init__(self, file_path, batch_size, padding_index, maxlen=512, batch_criteria='token',
+                 epoch_shuffle=True, sampling_mode=False, device='cuda', **kwargs):
+        self.fields = [('src_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
+                  ('tgt_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
+                  ('src_len', data.Field(sequential=False, use_vocab=False)),
+                  ('tgt_len', data.Field(sequential=False, use_vocab=False))]
+        self.file_path = file_path
+        super(TorchTextMTMulti, self).__init__(batch_size, padding_index, maxlen, batch_criteria, epoch_shuffle,
+                                              sampling_mode, device, **kwargs)
+
+    def make_examples(self):
+        res = []
+        for pair in self.file_path:
+            src, tgt = maybe_read(pair[0]), maybe_read(pair[1])
+            res.extend(self.examplify(src, tgt))
+            res.extend(self.examplify(tgt, src))
+        return res
+
+
 class MTBatchfier(BaseBatchfier):
     def __init__(self, src_filepaths, tgt_filepaths, batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 4096,
                  criteria: str = 'tgt_lens', padding_index=30000, epoch_shuffle=True,
@@ -175,9 +224,9 @@ class MTBatchfier(BaseBatchfier):
         self.sampling_mode = sampling_mode
 
     @staticmethod
-    def read_pickle(src, tgt):
-        src = pd.read_pickle(src)
-        tgt = pd.read_pickle(tgt)
+    def read_file(src, tgt):
+        src = maybe_read(src)
+        tgt = maybe_read(tgt)
         src_len = [len(i) for i in src.texts]
         tgt_len = [len(i) for i in tgt.texts]
         return pd.DataFrame({'src_texts': src.texts, 'src_lens': src_len,
@@ -187,7 +236,7 @@ class MTBatchfier(BaseBatchfier):
         l = 0
         dfs = []
         for src, tgt in zip(*self.fl):
-            temp = self.read_pickle(src, tgt)
+            temp = self.read_file(src, tgt)
             l += len(temp)
             dfs.append(temp)
         eos = dfs[-1].tgt_texts[0][-1]

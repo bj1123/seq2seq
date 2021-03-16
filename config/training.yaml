@@ -4,7 +4,7 @@ gathered: True
 device: 'cuda'
 batch_size: 25000
 gpu0_size: 8
-update_step: 2
+update_step: 8
 mixed_precision: True
 decay_step: 20000
 vocab_size: 30000

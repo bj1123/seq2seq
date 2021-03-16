@@ -9,7 +9,8 @@ import json
 from tokenizers import Tokenizer
 from tokenizers.models import *
 import shutil
-
+import random
+from util.files import maybe_read
 
 class BaseTokenizer(ABC):
     def __init__(self, dir_path, prefix, vocab_size=10000, use_imap=False, **kwargs):
@@ -27,7 +28,7 @@ class BaseTokenizer(ABC):
         elif os.path.isdir(path):
             # check whether the files are split into test, val set
             temp = get_files(path)
-            temp = list(filter(lambda x: '/raw' not in os.path.dirname(x), temp))
+            # temp = list(filter(lambda x: '/raw' not in os.path.dirname(x), temp))
             trains = list(filter(lambda x: 'train' in os.path.basename(x), temp))
             if filter_train and trains:
                 return trains
@@ -65,47 +66,40 @@ class BaseTokenizer(ABC):
     def decode(self, indexed):
         pass
 
+    @staticmethod
+    def _save_df(df, out):
+        if df is not None:
+            if not os.path.exists(os.path.dirname(out)):
+                os.makedirs(os.path.dirname(out))
+            df.to_feather(out)
+
     def corpus_encode(self, inp_path, **kwargs):
         if not self.is_trained:
             enc = self._learn_tokenizer(inp_path, **kwargs)
             self._save_tokenizer(enc)
             self.tokenizer, self.is_trained = self._load_tokenizer(self.directory_path, self.encoder_filename)
 
-        inp_path = os.path.join(self.directory_path, inp_path)
         procs = []
         fl = self._get_files(inp_path)
         input_isdir = os.path.isdir(inp_path)
 
         for index, inp in enumerate(fl):
             if input_isdir:
-                dir_name = os.path.dirname(inp)
-                basename = os.path.basename(inp)
-                if '.pkl' in basename:
-                    basename = os.path.splitext(basename)[0]
-                out = os.path.join(dir_name + '_encoded', basename + '.pkl')
+                rel_path = os.path.relpath(inp, inp_path)
+                out = os.path.join(self.directory_path, 'encoded', rel_path)
             else:
-                out = os.path.join(self.directory_path, os.path.splitext(inp_path)[0] + '_encoded.pkl')
-            df = self._encode_file(inp, out)
-            if df is not None:
-                if not os.path.exists(os.path.dirname(out)):
-                    os.makedirs(os.path.dirname(out))
-                df.to_pickle(out)
+                out = os.path.join(self.directory_path, os.path.splitext(inp_path)[0] + '_encoded.pkl')  # deprecated
 
-        # for index, inp in enumerate(fl):
-        #     if input_isdir:
-        #         basename, _ = os.path.splitext(inp)
-        #         basename = os.path.basename(basename)
-        #         out = os.path.join(out_dir, basename + '.pkl')
-        #     else:
-        #         out = os.path.join(self.directory_path, out_path + '.pkl')
-        #     proc = Process(target=self._encode_file, args=(inp, out))
+            self._encode_file(inp, out)
+            # proc = Process(target=self._encode_file, args=(inp, out))
         #     procs.append(proc)
         #     proc.start()
         # for proc in procs:
         #     proc.join()
+
         if self.imap is not None:
-            self.imap.learn_dic(inp_path)
-            self.imap.convert_corpus(inp_path)
+            self.imap.learn_dic(self.directory_path)
+            self.imap.convert_corpus(self.directory_path)
 
 
 class SpaceTokenizer(BaseTokenizer, ABC):
@@ -250,23 +244,26 @@ class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
             os.makedirs(out_path)
         fl = self._get_files(inp_path, filter_train=True)
         procs = []
-        for index, inp in enumerate(fl):
-            basename = os.path.basename(inp)
-            if input_isdir:
-                out = os.path.join(out_path, basename + '.txt')
-            else:
-                out = out_path
-            write_one(inp, out)
-
         # for index, inp in enumerate(fl):
-        #     basename, _ = os.path.splitext(inp)
-        #     basename = os.path.basename(basename)
-        #     out = os.path.join(out_path, basename + '.txt')
-        #     proc = Process(target=write_one, args=(inp, out))
-        #     procs.append(proc)
-        #     proc.start()
-        # for proc in procs:
-        #     proc.join()
+        #     basename = os.path.basename(inp)
+        #     if input_isdir:
+        #         out = os.path.join(out_path, basename + '.txt')
+        #     else:
+        #         out = out_path
+        #     write_one(inp, out)
+        filenames = []
+        for index, inp in enumerate(fl):
+            basename, _ = os.path.splitext(inp)
+            basename = os.path.basename(basename)
+            out = os.path.join(out_path, basename + '.txt')
+            while out in filenames:
+                out = os.path.join(out_path, basename + f'{random.randint(0,10000)}.txt')
+            filenames.append(out)
+            proc = Process(target=write_one, args=(inp, out))
+            procs.append(proc)
+            proc.start()
+        for proc in procs:
+            proc.join()
 
     def _learn_tokenizer(self, file_path, **kwargs):
         def merge_texts(out_path):
@@ -278,12 +275,11 @@ class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
                         f.writelines(t.readlines())
 
         print('start encoder learning')
-        full_path = os.path.join(self.directory_path, file_path)
-        if os.path.isdir(full_path):
-            out_path = full_path + '_temp'
+        if os.path.isdir(file_path):
+            out_path = file_path + '_temp'
         else:
-            out_path = os.path.splitext(full_path)[0] + '_temp.txt'
-        self._write_to_txt(os.path.join(self.directory_path, file_path), out_path, **kwargs)
+            out_path = os.path.splitext(file_path)[0] + '_temp.txt'
+        self._write_to_txt(file_path, out_path, **kwargs)
         tokenizer = self.tokenizer
         merge_texts(out_path)
         base_name = os.path.dirname(out_path)
@@ -300,6 +296,8 @@ class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
         return tokenizer
 
     def _save_tokenizer(self, tokenizer):
+        if not os.path.exists(self.directory_path):
+            os.makedirs(self.directory_path)
         tokenizer.model.save(self.directory_path, self.encoder_filename)
 
     def encode(self, text):

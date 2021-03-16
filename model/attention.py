@@ -113,7 +113,8 @@ class SentenceAwareAtt(MultiheadAtt):
                  dropout_rate:float, dropatt_rate:float=0.0, pre_lnorm=False, **kwargs):
         super(SentenceAwareAtt, self).__init__(hidden_dim, n_head, head_dim, dropout_rate,
                                                dropatt_rate, pre_lnorm, **kwargs)
-        self.proj = nn.Sequential(nn.Linear(hidden_dim, hidden_dim), nn.ReLU())  # to delete
+        # self.proj = nn.Sequential(nn.Linear(hidden_dim, hidden_dim), nn.ReLU())  # to delete
+        self.proj = nn.ReLU()  # to delete
 
     def forward(self, q, kv, mem, mask):
         query, out, kv, att_prob = self.before_add(q, kv, mem, mask)

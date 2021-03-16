@@ -1,17 +1,16 @@
 #!/bin/bash
 export PYTHONPATH="${PYTHONPATH}:../"
 echo $PYTHONPATH
-
-DATASET=wmt
+#!
+DATASET=un_pc
 MODEL=plain
 PENCODING=absolute
 
 CUDA_VISIBLE_DEVICES=0 python main.py \
- --src-path ../data/$DATASET/en_encoded \
- --tgt-path ../data/$DATASET/de_encoded \
+ --dir-path ../data/$DATASET/multi/encoded_mapped \
  --loss-type plain \
  --positional-encoding $PENCODING \
- --task seq2seq \
+ --task mnmt \
  --model-type $MODEL \
  --dataset-name $DATASET \
  --model-size base;

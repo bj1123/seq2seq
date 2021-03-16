@@ -11,9 +11,10 @@ echo $PYTHONPATH
 # --vocab-size 10000;
 
 python util/tokenize/main.py \
- --base-dir ../data/multitask_access \
- --target-dir . \
+ --src-dir ../data/un_pc/raw \
+ --target-dir ../data/un_pc/multi \
  --tokenizer-type WP \
  --prefix wp_30000 \
- --data-type multitask \
- --vocab-size 30000;
+ --data-type un_pc \
+ --use-control-token \
+ --vocab-size 64000;

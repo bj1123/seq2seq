@@ -2,6 +2,7 @@ from util.tokenize.base_tokenizer import *
 import pandas as pd
 import re
 
+
 class MTSpaceTokenizer(SpaceTokenizer):
     def __init__(self, dir_path, prefix, vocab_size, use_sos=True, use_eos=True, **kwargs):
         super(MTSpaceTokenizer, self).__init__(dir_path, prefix, vocab_size, use_sos, use_eos, **kwargs)
@@ -136,7 +137,7 @@ class MultiTaskTokenizer(HFTokenizer):
             langs = []
             for idx, texts in enumerate([src, tgt]):
                 lang, indice = self.append_special_tokens(texts, base_dir)
-                if 'simplification' in base_dir and idx ==0:
+                if 'simplification' in base_dir and idx == 0:
                     i_encoded = [self.access_src_encode(indice, i) for i in texts]
                 else:
                     i_encoded = [indice + self.tokenizer.encode(i.rstrip()).ids for i in texts]
@@ -165,10 +166,79 @@ class MultiTaskTokenizer(HFTokenizer):
         return en / ko
 
     def _learn_tokenizer(self, file_path, **kwargs):
-        full_path = os.path.join(self.directory_path, file_path)
-        ratio = self.pre_compute(full_path)
+        ratio = self.pre_compute(file_path)
         new_kwargs = dict(kwargs, ratio=ratio)
         if self.use_control_token:
             self.tokens_to_add += (list(self.control_tokens))
         enc = super()._learn_tokenizer(file_path, **new_kwargs)
+        return enc
+
+
+class UNTokenizer(HFTokenizer):
+    def __init__(self, directory_path, prefix, vocab_size=30000, tokenizer_class='wp',
+                 morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser, tokens_to_add=None,
+                 use_imap=True, split_jamo=False, use_control_token=False, **kwargs):
+        super(UNTokenizer, self).__init__(directory_path, prefix, vocab_size,
+                                          tokenizer_class=tokenizer_class,
+                                          morph_analyzer_class=morph_analyzer_class,
+                                          cleanser_class=cleanser_class,
+                                          tokens_to_add=tokens_to_add,
+                                          use_imap=use_imap,
+                                          split_jamo=split_jamo,
+                                          **kwargs)
+        self.use_control_token = use_control_token
+
+    @staticmethod
+    def language_token(token):
+        return f'[{token.upper()}]'
+
+    @staticmethod
+    def get_languages(file_path):
+        s = set()
+        files = get_files(file_path)
+        for file in files:
+            dirname = os.path.basename(os.path.dirname(file))
+            languages = dirname.split('-')
+            for lang in languages:
+                s.add(UNTokenizer.language_token(lang))
+        return s
+
+    def _read_file(self, file_path, **kwargs):
+        df = pd.read_feather(file_path)
+        res = []
+        for i in df.keys():
+            texts = [j+' \n' for j in df[i].tolist()]
+            res.extend(texts)
+        return res
+
+    def _encode_file(self, inp, out, **kwargs):
+        df = pd.read_feather(inp)
+        langs_str = df.keys()[0], df.keys()[1]
+        src, tgt = df[langs_str[0]].tolist(), df[langs_str[1]].tolist()
+        encoded = []
+        for idx, texts in enumerate([src, tgt]):
+            if self.use_control_token:
+                indice = [self.tokenizer.token_to_id(self.language_token(langs_str[idx]))]
+            else:
+                indice = []
+
+            batch_encoded = self.tokenizer.encode_batch(texts)
+            i_encoded = [indice + i.ids for i in batch_encoded]
+            encoded.append(i_encoded)
+
+        src_df = pd.DataFrame({'texts': encoded[0]})
+        tgt_df = pd.DataFrame({'texts': encoded[1]})
+        src_path = os.path.join(os.path.dirname(out), langs_str[0],os.path.basename(out))
+        tgt_path = os.path.join(os.path.dirname(out), langs_str[1],os.path.basename(out))
+        self._save_df(src_df, src_path)
+        self._save_df(tgt_df, tgt_path)
+
+    def _learn_tokenizer(self, file_path, **kwargs):
+        if self.use_control_token:
+            self.control_tokens = self.get_languages(file_path)
+            if self.tokens_to_add is None:
+                self.tokens_to_add = list(self.control_tokens)
+            else:
+                self.tokens_to_add += list(self.control_tokens)
+        enc = super()._learn_tokenizer(file_path, **kwargs)
         return enc

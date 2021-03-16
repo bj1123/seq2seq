@@ -2,6 +2,8 @@ import pandas as pd
 import collections
 from util.files import *
 import argparse
+import re
+from util.files import maybe_read
 
 
 class IMap:
@@ -33,11 +35,11 @@ class IMap:
     def get_columns(df_path):
         if isinstance(df_path,list):
             df_path = df_path[0]
-        df = pd.read_pickle(df_path)
+        df = maybe_read(df_path)
         c = df.columns
         tar = set()
         for i in c:
-            if isinstance(df[i][0], list):
+            if isinstance(df[i][0], list) or isinstance(df[i][0], np.ndarray):
                 tar.add(i)
         return tar
 
@@ -51,7 +53,9 @@ class IMap:
                 path = path + '_encoded'
             # check whether the files are split into test, val set
             temp = get_files(path)
-            temp = list(filter(lambda x: os.path.dirname(x).endswith('encoded'), temp))
+            temp = list(filter(lambda x: True in [os.path.basename(x).endswith('.pq'),
+                                                  os.path.basename(x).endswith('.pkl'),
+                                                  os.path.basename(x).endswith('.feather')], temp))
             trains = list(filter(lambda x: 'train' in os.path.basename(x), temp))
             if filter_train and trains:
                 return trains
@@ -63,12 +67,13 @@ class IMap:
         cnter = collections.Counter()
         s = set()
         fl = self._get_files(path, filter_train=True)
+        print(fl)
         checks = self.get_columns(fl[0])
         if not self.target_names:
             self.target_names = checks
         targets = self.target_names
         for filename in fl:
-            cur_df = pd.read_pickle(filename)
+            cur_df = maybe_read(filename)
             for target in targets:
                 texts = cur_df[target].tolist()
                 for i in texts:
@@ -110,7 +115,7 @@ class IMap:
     def convert_corpus(self, filepath):
         def _convert_file(filename, dic):
             key_type = type(list(dic)[0])
-            cur_df = pd.read_pickle(filename)
+            cur_df = maybe_read(filename)
             for target in targets:
                 new = []
                 for line in cur_df[target].tolist():
@@ -128,17 +133,15 @@ class IMap:
         fl = self._get_files(filepath)
         if os.path.isdir(filepath):
             for filename in fl:
-                base_filename = os.path.basename(filename)
-                dirname = os.path.dirname(filename)
                 cur_df = _convert_file(filename, self.dic)
-                new_filename = os.path.join(dirname + '_mapped', base_filename)
+                new_filename = re.sub(os.path.join('encoded',''), os.path.join('encoded_mapped',''), filename)
                 if not os.path.exists(os.path.dirname(new_filename)):
                     os.makedirs(os.path.dirname(new_filename))
-                cur_df.to_pickle(new_filename)
+                cur_df.to_feather(new_filename)
         else:
             cur_df = _convert_file(fl[0], self.dic)
             new_path = os.path.splitext(fl[0])[0] + '_mapped.pkl'
-            cur_df.to_pickle(new_path)
+            cur_df.to_feather(new_path)
 
     def convert_line(self, line):
         assert self.dic is not None, 'dictionary must be built first'
