@@ -5,7 +5,7 @@ echo $PYTHONPATH
 
 PENCODING=absolute
 MODEL=plain
-EPOCH=10
+EPOCH=2
 
 python evaluate.py \
 --gt-path ../data/wmt/de_encoded/test.pkl \

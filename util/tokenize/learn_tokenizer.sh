@@ -2,6 +2,8 @@
 export PYTHONPATH="${PYTHONPATH}:../"
 echo $PYTHONPATH
 
+VOCAB_SIZE=30000
+
 #python util/tokenize/main.py \
 # --base-dir ../data/data-simplification/wikilarge/splited \
 # --target-dir src \
@@ -11,10 +13,9 @@ echo $PYTHONPATH
 # --vocab-size 10000;
 
 python util/tokenize/main.py \
- --src-dir ../data/un_pc/raw \
- --target-dir ../data/un_pc/multi \
+ --src-dir ../data/un_pc/raw/ar-en \
+ --target-dir ../data/un_pc/mono/ar-en \
  --tokenizer-type WP \
- --prefix wp_30000 \
+ --prefix wp_$VOCAB_SIZE \
  --data-type un_pc \
- --use-control-token \
- --vocab-size 64000;
+ --vocab-size $VOCAB_SIZE;

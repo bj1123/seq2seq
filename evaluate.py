@@ -1,7 +1,7 @@
 import numpy as np
 import argparse
 import pandas as pd
-from util.files import load_json
+from util.files import load_json, maybe_read
 
 
 def get_args():
@@ -27,7 +27,7 @@ def save(l, path):
 
 def main():
     args = get_args()
-    gt = pd.read_pickle(args.gt_path)
+    gt = maybe_read(args.gt_path)
     samples = load_json(args.sample_path)
     res = list(map(tos, samples))
     save(res, 'sampled.txt')

@@ -133,8 +133,8 @@ class TransformerEmbedding(nn.Module):
 
         # self.word_embedding = OneEmbed(vocab_size, embedding_dim, padding_index,
         #                                one_emb_type='real', dropout=dropout_rate)
-        self.word_embedding = HashEmbedding(vocab_size, embedding_dim, padding_index)
-        # self.word_embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=padding_index)
+        # self.word_embedding = HashEmbedding(vocab_size, embedding_dim, padding_index)
+        self.word_embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=padding_index)
         if self.use_pos_emb:
             self.posisition_embedding = nn.Embedding(max_seqlen, embedding_dim)
         self.dropout = nn.Dropout(dropout_rate)
@@ -172,13 +172,13 @@ class OneEmbed(nn.Module):
             self.masklist = [torch.bernoulli(prob) for _ in range(codebooknum)]
         else:
             mean_m = torch.zeros(codenum, embedding_dim)
-            std_m = nn.Parameter(torch.Tensor(codenum, embedding_dim), requires_grad=False)
+            std_m = torch.Tensor(codenum, embedding_dim)
             nn.init.constant_(std_m, std * (codebooknum ** -0.5))
-            self.masklist = [torch.normal(mean_m, std_m) for _ in range(codebooknum)]
+            self.masklist = nn.ParameterList(
+                [nn.Parameter(torch.normal(mean_m, std_m), requires_grad=False) for _ in range(codebooknum)])
         self.hash2mask = nn.Parameter(torch.randint(0, codenum, (num_embeddings, codebooknum), dtype=torch.long),
                                       requires_grad=False)
-        self.mask = self.construct_mask2each_token() #mask for each token
-
+        self.mask = None #mask for each token
 
     def construct_mask2each_token(self):
         mask = []
@@ -196,6 +196,8 @@ class OneEmbed(nn.Module):
         return matrix
 
     def forward(self, input):
+        if self.mask is None:
+            self.mask = self.construct_mask2each_token()
         if input.is_cuda and not self.mask.is_cuda:
             self.mask = self.mask.cuda().to(torch.half)
         each_token_mask = nn.functional.embedding(input, self.mask, padding_idx=self.padding_idx)

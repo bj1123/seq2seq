@@ -1,7 +1,6 @@
 base:
-  batch_seqlen: 512
   hidden_dim: 512
-  seq_len: 500
+  seq_len: 512
   projection_dim: 2048
   n_heads: 8
   head_dim: 64
@@ -12,9 +11,8 @@ base:
   pre_lnorm: False
 
 large:
-  batch_seqlen: 1024
   hidden_dim: 1024
-  seq_len: 500
+  seq_len: 512
   projection_dim: 4096
   n_heads: 16
   head_dim: 64

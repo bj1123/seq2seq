@@ -18,7 +18,7 @@ def get_batchfier(args):
         # test_batchfier = TorchTextMT(args.train_src_path, args.train_tgt_path, args.batch_size // args.update_step,
         #                               padding_index=args.padding_index, device=args.device,
         #                               epoch_shuffle=False, sampling_mode=True)
-        test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, 128,
+        test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, 64, seq_len=args.seq_len,
                                      padding_index=args.padding_index, epoch_shuffle=False,
                                      device=args.device, sampling_mode=True)
     return test_batchfier.to_iterator()
@@ -31,10 +31,10 @@ def get_sampler(args, model, batchfier):
         model, optimizer = apex.amp.initialize(model, optimizer, opt_level=opt_level)
 
     if args.model_type == 'complexity-aware':
-        trainer = ComplexitySampler(model, args.sampling_mode, 200, args.temperature, args.width,
+        trainer = ComplexitySampler(model, args.sampling_mode, 400, args.temperature, args.width,
                                     batchfier.dataset.eos_idx, use_cache=True, length_penalty=args.lengths_penalty)
     elif args.model_type == 'sentence-aware':
-        trainer = SentenceAwareSampler(model, args.sampling_mode, 200, args.temperature, args.width,
+        trainer = SentenceAwareSampler(model, args.sampling_mode, 400, args.temperature, args.width,
                                     batchfier.dataset.eos_idx, use_cache=True, length_penalty=args.lengths_penalty)
     else:
         trainer = Sampler(model, args.sampling_mode, 200, args.temperature, args.width, batchfier.dataset.eos_idx,

@@ -14,6 +14,8 @@ from util.files import maybe_read
 
 
 def truncate(inp, maxlen):
+    if isinstance(inp, np.ndarray):
+        inp = inp.tolist()
     if len(inp) < maxlen:
         return inp
     else:
@@ -47,7 +49,7 @@ def null_count(new, count, sofar):
 
 class BaseBatchfier(IterableDataset):
     def __init__(self, batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 4096,
-                 criteria: str = 'lens',
+                 criteria: str = 'lens', batch_level='token',
                  padding_index=70000, epoch_shuffle=False, device='cuda'):
         super(BaseBatchfier, self).__init__()
         self.maxlen = maxlen
@@ -58,8 +60,23 @@ class BaseBatchfier(IterableDataset):
         self.padding_index = padding_index
         self.epoch_shuffle = epoch_shuffle
         self.device = device
+        self.batch_level = batch_level
 
         # self.size = len(self.df) / num_buckets
+
+    def batch_sampler(self,):
+        indices = [(i, len(tokenizer(s[1]))) for i, s in enumerate(train_list)]
+        random.shuffle(indices)
+        pooled_indices = []
+        # create pool of indices with similar lengths
+        for i in range(0, len(indices), self.size * 100):
+            pooled_indices.extend(sorted(indices[i:i + self.size * 100], key=lambda x: x[1]))
+
+        pooled_indices = [x[0] for x in pooled_indices]
+
+        # yield indices for current batch
+        for i in range(0, len(pooled_indices), self.size):
+            yield pooled_indices[i:i + self.size]
 
     def truncate_small(self, df, criteria='lens'):
         lens = np.array(df[criteria])
@@ -220,17 +237,18 @@ class MTBatchfier(BaseBatchfier):
         super(MTBatchfier, self).__init__(batch_size, seq_len, minlen, maxlen, criteria, padding_index,
                                           epoch_shuffle, device)
         self.fl = (src_filepaths, tgt_filepaths)
-        self.dfs, self.tot_len, self.eos_idx = self.initialize()
+        self.df, self.tot_len, self.eos_idx = self.initialize()
         self.sampling_mode = sampling_mode
 
-    @staticmethod
-    def read_file(src, tgt):
+    def read_file(self, src, tgt):
         src = maybe_read(src)
         tgt = maybe_read(tgt)
-        src_len = [len(i) for i in src.texts]
-        tgt_len = [len(i) for i in tgt.texts]
-        return pd.DataFrame({'src_texts': src.texts, 'src_lens': src_len,
-                             'tgt_texts': tgt.texts, 'tgt_lens': tgt_len})
+        src_texts = [truncate(i, self.seq_len) for i in src.texts]
+        tgt_texts = [truncate(i, self.seq_len) for i in tgt.texts]
+        src_len = [len(i) for i in src_texts]
+        tgt_len = [len(i) for i in tgt_texts]
+        return pd.DataFrame({'src_texts': src_texts, 'src_lens': src_len,
+                             'tgt_texts': tgt_texts, 'tgt_lens': tgt_len})
 
     def initialize(self):
         l = 0
@@ -239,28 +257,29 @@ class MTBatchfier(BaseBatchfier):
             temp = self.read_file(src, tgt)
             l += len(temp)
             dfs.append(temp)
+        df = pd.concat(dfs, ignore_index=True)
         eos = dfs[-1].tgt_texts[0][-1]
-        return dfs, l, eos
+        return df, l, eos
 
     def __len__(self):
         return self.tot_len
 
     def __iter__(self):
-        for df in self.dfs:
-            if self.epoch_shuffle:
-                df = self.sort(df)
-            indice = self.batch_indice(df)
-            for l in indice:
-                cur_batch = df.iloc[l:l + self.size]
-                src_texts = cur_batch['src_texts'].tolist()
-                src_lens = cur_batch['src_lens'].tolist()
-                tgt_texts = cur_batch['tgt_texts'].tolist()
-                tgt_lens = cur_batch['tgt_lens'].tolist()
-                for i in range(len(src_texts)):
-                    if self.sampling_mode:
-                        yield src_texts[i], src_lens[i], tgt_texts[i][:2], 2
-                    else:
-                        yield src_texts[i], src_lens[i], tgt_texts[i], tgt_lens[i]
+        df = self.df
+        if self.epoch_shuffle:
+            df = self.sort(df)
+        indice = self.batch_indice(df)
+        for l in indice:
+            cur_batch = df.iloc[l:l + self.size]
+            src_texts = cur_batch['src_texts'].tolist()
+            src_lens = cur_batch['src_lens'].tolist()
+            tgt_texts = cur_batch['tgt_texts'].tolist()
+            tgt_lens = cur_batch['tgt_lens'].tolist()
+            for i in range(len(src_texts)):
+                if self.sampling_mode:
+                    yield src_texts[i], src_lens[i], tgt_texts[i][:2], 2
+                else:
+                    yield src_texts[i], src_lens[i], tgt_texts[i], tgt_lens[i]
 
     def collate_fn(self, batch):
         src_texts = [torch.Tensor(item[0]).long() for item in batch]

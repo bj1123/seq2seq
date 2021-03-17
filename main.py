@@ -11,13 +11,13 @@ from util.lr_scheduler import *
 
 
 def get_model(args):
-    print(args.savename, args.batch_size, args.n_epoch, args.vocab_size, args.batch_seqlen, args.hidden_dim,
+    print(args.savename, args.batch_size, args.n_epoch, args.vocab_size, args.seq_len, args.hidden_dim,
           args.projection_dim, args.n_heads,
           args.head_dim, args.n_enc_layers, args.n_dec_layers, args.dropout_rate,
           args.dropatt_rate, args.padding_index, args.shared_embedding, args.tie_embedding)
     if args.task in ('seq2seq', 'access', 'mnmt'):
         if args.model_type == 'complexity-aware':
-            model = ComplexityAwareModel(args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim,
+            model = ComplexityAwareModel(args.vocab_size, args.seq_len, args.hidden_dim, args.projection_dim,
                                          args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
                                          args.dropout_rate,
                                          args.dropatt_rate, args.padding_index, args.cutoffs, pre_lnorm=args.pre_lnorm,
@@ -25,7 +25,7 @@ def get_model(args):
                                          tie_embedding=args.tie_embedding)
 
         elif args.model_type == 'sentence-aware':
-            model = SentenceAwareModel(args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim,
+            model = SentenceAwareModel(args.vocab_size, args.seq_len, args.hidden_dim, args.projection_dim,
                                        args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
                                        args.dropout_rate,
                                        args.dropatt_rate, args.padding_index, pre_lnorm=args.pre_lnorm,
@@ -33,14 +33,14 @@ def get_model(args):
                                        tie_embedding=args.tie_embedding)
 
         else:
-            model = EncoderDecoderModel(args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim,
+            model = EncoderDecoderModel(args.vocab_size, args.seq_len, args.hidden_dim, args.projection_dim,
                                         args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
                                         args.dropout_rate,
                                         args.dropatt_rate, args.padding_index, pre_lnorm=args.pre_lnorm,
                                         pos_enc=args.positional_encoding, shared_embedding=args.shared_embedding,
                                         tie_embedding=args.tie_embedding)
     elif args.task == 'multitask':
-        model = CrossLingualModel(args.vocab_size, args.batch_seqlen, args.hidden_dim, args.projection_dim,
+        model = CrossLingualModel(args.vocab_size, args.seq_len, args.hidden_dim, args.projection_dim,
                                   args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
                                   args.dropout_rate, args.dropatt_rate, args.padding_index, pre_lnorm=args.pre_lnorm,
                                   pos_enc=args.positional_encoding, shared_embedding=args.shared_embedding,
