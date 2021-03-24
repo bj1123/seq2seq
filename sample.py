@@ -18,7 +18,7 @@ def get_batchfier(args):
         # test_batchfier = TorchTextMT(args.train_src_path, args.train_tgt_path, args.batch_size // args.update_step,
         #                               padding_index=args.padding_index, device=args.device,
         #                               epoch_shuffle=False, sampling_mode=True)
-        test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, 64, seq_len=args.seq_len,
+        test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, 64, maxlen=args.seq_len,
                                      padding_index=args.padding_index, epoch_shuffle=False,
                                      device=args.device, sampling_mode=True)
     return test_batchfier.to_iterator()
@@ -31,10 +31,10 @@ def get_sampler(args, model, batchfier):
         model, optimizer = apex.amp.initialize(model, optimizer, opt_level=opt_level)
 
     if args.model_type == 'complexity-aware':
-        trainer = ComplexitySampler(model, args.sampling_mode, 400, args.temperature, args.width,
+        trainer = ComplexitySampler(model, args.sampling_mode, 200, args.temperature, args.width,
                                     batchfier.dataset.eos_idx, use_cache=True, length_penalty=args.lengths_penalty)
     elif args.model_type == 'sentence-aware':
-        trainer = SentenceAwareSampler(model, args.sampling_mode, 400, args.temperature, args.width,
+        trainer = SentenceAwareSampler(model, args.sampling_mode, 200, args.temperature, args.width,
                                     batchfier.dataset.eos_idx, use_cache=True, length_penalty=args.lengths_penalty)
     else:
         trainer = Sampler(model, args.sampling_mode, 200, args.temperature, args.width, batchfier.dataset.eos_idx,
@@ -45,6 +45,7 @@ def get_sampler(args, model, batchfier):
 if __name__ == '__main__':
     args = get_args()
     # print(args.__dict__)
+    print(args.sample_save_path)
     model = get_model(args)
     model.load_state_dict(torch.load(args.load_path))
     model = model.to(args.device)
@@ -58,7 +59,6 @@ if __name__ == '__main__':
     for inp in batchfier:
         cnt +=1
         res.extend(sampler.sample(inp))
-        # print(res)
         print(cnt, time.time()-t)
         t = time.time()
     if not os.path.exists(os.path.dirname(args.sample_save_path)):
@@ -66,4 +66,5 @@ if __name__ == '__main__':
     # f = open(args.sample_save_path, 'w')
     # txts = [' '.join(map(str, i[:-1])) + ' \n' for i in res]
     # f.writelines(txts)
-    json.dump(list(map(lambda x: x[:-1],res)), open(args.sample_save_path,'w'))
+    data = list(map(lambda x: x[1:-1],res)) if 'multi' in args.src_path else list(map(lambda x: x[:-1],res))
+    json.dump(data, open(args.sample_save_path,'w'))

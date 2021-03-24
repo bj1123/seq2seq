@@ -119,7 +119,7 @@ class BaseNetwork(nn.Module):
         bs, qs = inp_masks.size()
         ms = mem[0].size(1) if mem is not None else 0
         ks = qs + ms
-        ones = torch.ones((qs, ks)).byte().to(inp_masks.device)
+        ones = torch.ones((qs, ks), dtype=torch.uint8, device=inp_masks.device)
         if not self.is_bidirectional:
             dec_mask = ones.triu(1 + ms)
         else:
@@ -187,7 +187,7 @@ class DecoderNetwork(BaseNetwork):
         tgt_masks = mask_lengths(tgt_len, reverse=True).byte()
         bs, tl = tgt_masks.size()
         sl = src_masks.size(1)
-        zeros = torch.zeros(size=(tl, sl)).to(src_masks.device)
+        zeros = torch.zeros(size=(tl, sl), device=src_masks.device)
         res = zeros[None] + src_masks[:, None]
         return res.byte()
 

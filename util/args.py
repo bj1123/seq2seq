@@ -92,8 +92,7 @@ class MTArgument(BaseArgument):
         parser.add_argument("--dataset-name", type=str)
         parser.add_argument('--prob-path', type=str)
         parser.add_argument("--model-checkpoint", help="transfer for finetune model", default="", type=str)
-        if is_test:
-            parser.add_argument('--sample-save-path', type=str)
+
         return parser
 
     def load_files(self, data):
@@ -103,8 +102,10 @@ class MTArgument(BaseArgument):
         # for debugging
         data['train_src_path'] = files_including(data['src_path'], 'train')
         data['train_tgt_path'] = files_including(data['tgt_path'], 'train')
+        data['train_example_path'] = os.path.join(os.path.dirname(data['tgt_path']), 'tr_examples')
         data['test_src_path'] = files_including(data['src_path'], 'test')
         data['test_tgt_path'] = files_including(data['tgt_path'], 'test')
+        data['test_example_path'] = os.path.join(os.path.dirname(data['tgt_path']), 'te_examples')
         data['padding_index'] = data['vocab_size'] - 1
         if data['prob_path']:
             data['cum_probs'] = load_json(data['prob_path'])
@@ -113,6 +114,7 @@ class MTArgument(BaseArgument):
         data['savename'] = os.path.join(dirname, basename)
         if data['saved_model_folder'] and data['saved_model_ckpt']:
             data['load_path'] = os.path.join(data['saved_model_folder'], data['saved_model_ckpt'])
+            data['sample_save_path'] = data['load_path'].replace('saved_model', 'sampled')
 
 
 class MultitaskArgument(BaseArgument):
@@ -188,25 +190,34 @@ class MNMTArgument(BaseArgument):
         parser = self.get_common_args(is_test)
         parser.add_argument("--dir-path", type=str)
         parser.add_argument("--dataset-name", type=str)
+        parser.add_argument("--target-lang", type=str)
+        parser.add_argument("--n_chunk", type=int, default=1)
         if is_test:
             parser.add_argument('--sample-save-path', type=str)
         return parser
 
-    def pair_files(self, dir_path, target_name='train'):
+    def pair_files(self, dir_path, target_name='train', target_lang=None):
         dirs = os.listdir(dir_path)
         res = []
         for i in dirs:
-            x = files_including(os.path.join(dir_path, i), target_name)
-            res.append(x)
+            files = files_including(os.path.join(dir_path, i), target_name)
+            if target_lang:
+                files = list(filter(lambda x: target_lang in os.path.relpath(x, dir_path), files))
+            if files:
+                res.append(files)
         return res
 
     def load_files(self, data):
         model_type = data['model_type']
-        dirname = os.path.join('data', 'saved_model', data['dataset_name'], model_type)
+        middle_folder = os.path.join('semi', data['target_lang']) if data['target_lang'] else 'multi'
+        dirname = os.path.join('data', 'saved_model', data['dataset_name'], middle_folder, model_type)
         basename = '{}_{}_{}'.format(data['model_size'], data['learning_rate'], data['positional_encoding'])
         # for debugging
-        data['train_path'] = self.pair_files(data['dir_path'], 'train')
-        data['test_path'] = self.pair_files(data['dir_path'], 'test')
+        target_lang = f'_{data["target_lang"]}' if data['target_lang'] else ''
+        data['train_path'] = self.pair_files(data['dir_path'], 'train', data['target_lang'])
+        data['train_example_path'] = os.path.join(data['dir_path'], 'tr_examples' + target_lang)
+        data['test_path'] = self.pair_files(data['dir_path'], 'test', data['target_lang'])
+        data['test_example_path'] = os.path.join(data['dir_path'], 'te_examples' + target_lang)
         data['padding_index'] = data['vocab_size'] - 1
         data['savename'] = os.path.join(dirname, basename)
         if data['saved_model_folder'] and data['saved_model_ckpt']:

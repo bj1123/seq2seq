@@ -177,7 +177,7 @@ class MultiTaskTokenizer(HFTokenizer):
 class UNTokenizer(HFTokenizer):
     def __init__(self, directory_path, prefix, vocab_size=30000, tokenizer_class='wp',
                  morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser, tokens_to_add=None,
-                 use_imap=True, split_jamo=False, use_control_token=False, **kwargs):
+                 use_imap=True, split_jamo=False, use_control_token=False, target_lang=None, **kwargs):
         super(UNTokenizer, self).__init__(directory_path, prefix, vocab_size,
                                           tokenizer_class=tokenizer_class,
                                           morph_analyzer_class=morph_analyzer_class,
@@ -187,6 +187,7 @@ class UNTokenizer(HFTokenizer):
                                           split_jamo=split_jamo,
                                           **kwargs)
         self.use_control_token = use_control_token
+        self.target_lang = target_lang
 
     @staticmethod
     def language_token(token):
@@ -240,5 +241,10 @@ class UNTokenizer(HFTokenizer):
                 self.tokens_to_add = list(self.control_tokens)
             else:
                 self.tokens_to_add += list(self.control_tokens)
-        enc = super()._learn_tokenizer(file_path, **kwargs)
+        new_kwargs = dict(kwargs, filter_words=self.target_lang)
+        enc = super()._learn_tokenizer(file_path, **new_kwargs)
         return enc
+
+    def corpus_encode(self, inp_path, **kwargs):
+        new_kwargs = dict(kwargs, filter_words=self.target_lang)
+        super().corpus_encode(inp_path, **new_kwargs)

@@ -8,9 +8,9 @@ import pickle
 from abc import *
 from torch.utils.data.dataset import Dataset, IterableDataset
 from torch.utils.data.dataloader import DataLoader
-from torchtext import data
+from torchtext.legacy import data
 from multiprocessing import Process, Manager
-from util.files import maybe_read
+from util.files import maybe_read, files_including
 
 
 def truncate(inp, maxlen):
@@ -47,9 +47,189 @@ def null_count(new, count, sofar):
     return count
 
 
+class TorchTextMTBase(ABC):
+
+    @staticmethod
+    def sort_key(ex):
+        return data.interleave_keys(len(ex.src_texts), len(ex.tgt_texts))
+
+    def __init__(self, batch_size, padding_index, maxlen=512, batch_criteria='token',
+                 epoch_shuffle=True, sampling_mode=False, device='cuda', **kwargs):
+        self.fields = [('src_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
+                  ('tgt_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
+                  ('src_len', data.Field(sequential=False, use_vocab=False)),
+                  ('tgt_len', data.Field(sequential=False, use_vocab=False))]
+        super(TorchTextMTBase, self).__init__(**kwargs)
+        self.padding_index = padding_index
+        self.batch_size = batch_size
+        self.batch_criteria = batch_criteria
+        self.epoch_shuffle = epoch_shuffle
+        self.sampling_mode = sampling_mode
+        self.device = device
+        self.maxlen = maxlen
+        self.batch_size_fn = max_tok_len if batch_criteria == 'token' else null_count
+
+    @abstractmethod
+    def make_examples(self):
+        pass
+
+    @abstractmethod
+    def iterator(self):
+        pass
+
+    @staticmethod
+    def reformat(batch):
+        return {'src': batch.src_texts,
+                'src_len': batch.src_len,
+                'tgt': batch.tgt_texts[:, :-1],
+                'tgt_len': batch.tgt_len - 1,
+                'label': batch.tgt_texts[:, 1:]}
+
+    def examplify(self, src, tgt):
+        def partial_examplify(partial_src, partial_tgt):
+            def to_list(idx):
+                src = truncate(partial_src.iloc[idx].texts, self.maxlen)
+                tgt = truncate(partial_tgt.iloc[idx].texts, self.maxlen)
+                return [src, tgt, len(src), len(tgt)]
+
+            examples = [data.Example.fromlist(to_list(i), self.fields) for i in range(len(partial_src))]
+            l.extend(examples)
+
+        with Manager() as manager:
+            l = manager.list()
+            procs = []
+            num_thread = 16
+            data_per_thread = len(src) // num_thread
+            for i in range(num_thread + 1):
+                proc = Process(target=partial_examplify, args=(src.iloc[i * data_per_thread:(i + 1) * data_per_thread],
+                                                               tgt.iloc[i * data_per_thread:(i + 1) * data_per_thread]))
+                procs.append(proc)
+                proc.start()
+            for proc in procs:
+                proc.join()
+            examples = list(l)
+        return examples
+
+    def batch_per_epoch(self):
+        if self.batch_criteria == 'token':
+            avg = sum([i.tgt_len for i in self.examples]) / len(self.examples)
+            avg_batch = self.batch_size / avg
+            return int(len(self.examples) / avg_batch)
+        else:
+            return int(len(self.examples) / self.batch_size)
+
+    def to_iterator(self):
+        return self.iterator()
+
+
+class TorchTextMTMono(TorchTextMTBase):
+    def __init__(self, src_filepath, tgt_filepath, example_path,
+                 batch_size, padding_index, maxlen=512, batch_criteria='token',
+                 epoch_shuffle=True, sampling_mode=False, device='cuda', **kwargs):
+        self.fields = [('src_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
+                  ('tgt_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
+                  ('src_len', data.Field(sequential=False, use_vocab=False)),
+                  ('tgt_len', data.Field(sequential=False, use_vocab=False))]
+        super(TorchTextMTMono, self).__init__(batch_size, padding_index, maxlen, batch_criteria, epoch_shuffle,
+                                              sampling_mode, device, **kwargs)
+        self.src = maybe_read(src_filepath[0])  # temporary implementation.
+        self.tgt = maybe_read(tgt_filepath[0])
+        self.example_path = example_path
+        self.examples = self.make_examples()
+        self.dataset = data.Dataset(self.examples, self.fields, **kwargs)
+        self.ds = data.BucketIterator(sort_within_batch=epoch_shuffle, shuffle=epoch_shuffle, dataset=self.dataset,
+                                      device=device, batch_size=batch_size, batch_size_fn=self.batch_size_fn,
+                                      sort_key=self.sort_key)
+
+    def make_examples(self):
+        path = self.example_path + '.pkl'
+        if os.path.exists(path):
+            examples = pd.read_pickle(path).examples.tolist()
+        else:
+            examples = self.examplify(self.src, self.tgt)
+            df = pd.DataFrame({'examples': examples})
+            df.to_pickle(path)
+        return examples
+
+    def iterator(self):
+        self.ds.create_batches()
+        for sample in self.ds:
+            yield self.reformat(sample)
+
+
+class TorchTextMTMulti(TorchTextMTBase):
+    def __init__(self, file_path, batch_size, example_path, padding_index, n_chunk=1, maxlen=512, batch_criteria='token',
+                 epoch_shuffle=True, sampling_mode=False, target_lang=None, device='cuda', **kwargs):
+        super(TorchTextMTMulti, self).__init__(batch_size, padding_index, maxlen, batch_criteria, epoch_shuffle,
+                                              sampling_mode, device, **kwargs)
+        self.fields = [('src_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
+                  ('tgt_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
+                  ('src_len', data.Field(sequential=False, use_vocab=False)),
+                  ('tgt_len', data.Field(sequential=False, use_vocab=False))]
+        self.file_path = file_path
+        self.example_path = example_path
+        self.n_chunk = n_chunk
+        self.target_lang = target_lang
+        self.examples = self.make_examples()
+        self.dataset = data.Dataset(self.examples, self.fields, **kwargs)
+        self.ds = data.BucketIterator(sort_within_batch=epoch_shuffle, shuffle=epoch_shuffle, dataset=self.dataset,
+                                      device=device, batch_size=batch_size, batch_size_fn=self.batch_size_fn,
+                                      sort_key=self.sort_key)
+
+    def make_examples(self):
+        def read_src_tgt(src_path, tgt_path, target_lang):
+            src, tgt = maybe_read(src_path), maybe_read(tgt_path)
+            if target_lang:
+                src_lang = os.path.basename(os.path.dirname(src_path))
+                if target_lang in src_lang:
+                    src, tgt = tgt, src
+            return src, tgt
+
+        def partial_examplify(src, tgt, start, end, include_reverse):
+            res = []
+            res.extend(self.examplify(src.iloc[start:end], tgt.iloc[start:end]))
+            if include_reverse:
+                res.extend(self.examplify(tgt, src))
+            return res
+
+        if self.n_chunk ==1:  # return examples
+            path = self.example_path + '.pkl'
+            if os.path.exists(path):
+                print('loading existing examples')
+                res = pd.read_pickle(path).examples.tolist()
+            else:
+                print('build new examples')
+                res = []
+                for pair in self.file_path:
+                    src, tgt = read_src_tgt(pair[0], pair[1], self.target_lang)
+                    res.extend(partial_examplify(src, tgt, 0, len(src), self.target_lang is None))
+                df = pd.DataFrame({'examples': res})
+                df.to_pickle(path)
+
+        else:  # return filepaths of examples
+            raise NotImplementedError
+            # res = files_including(os.path.dirname(self.example_path), os.path.basename(self.example_path))
+            # if not res:
+            #     for i in range(1, self.n_chunk + 1):
+            #         examples = []
+            #         for pair in self.file_path:
+            #             src, tgt = maybe_read(pair[0]), maybe_read(pair[1])
+            #             partial_examplify(src, tgt, 0, len(src), self.many_to_many)
+            #
+            #
+            #         target_index =
+
+        return res
+
+    def iterator(self):
+        self.ds.create_batches()
+        for sample in self.ds:
+            yield self.reformat(sample)
+
+
 class BaseBatchfier(IterableDataset):
     def __init__(self, batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 4096,
-                 criteria: str = 'lens', batch_level='token',
+                 criteria: str = 'lens',
                  padding_index=70000, epoch_shuffle=False, device='cuda'):
         super(BaseBatchfier, self).__init__()
         self.maxlen = maxlen
@@ -60,23 +240,8 @@ class BaseBatchfier(IterableDataset):
         self.padding_index = padding_index
         self.epoch_shuffle = epoch_shuffle
         self.device = device
-        self.batch_level = batch_level
 
         # self.size = len(self.df) / num_buckets
-
-    def batch_sampler(self,):
-        indices = [(i, len(tokenizer(s[1]))) for i, s in enumerate(train_list)]
-        random.shuffle(indices)
-        pooled_indices = []
-        # create pool of indices with similar lengths
-        for i in range(0, len(indices), self.size * 100):
-            pooled_indices.extend(sorted(indices[i:i + self.size * 100], key=lambda x: x[1]))
-
-        pooled_indices = [x[0] for x in pooled_indices]
-
-        # yield indices for current batch
-        for i in range(0, len(pooled_indices), self.size):
-            yield pooled_indices[i:i + self.size]
 
     def truncate_small(self, df, criteria='lens'):
         lens = np.array(df[criteria])
@@ -115,140 +280,89 @@ class BaseBatchfier(IterableDataset):
     def to_iterator(self):
         return DataLoader(self, self.size, collate_fn=self.collate_fn)
 
-
-class TorchTextMTBase(data.Dataset, ABC):
-
-    @staticmethod
-    def sort_key(ex):
-        return data.interleave_keys(len(ex.src_texts), len(ex.tgt_texts))
-
-    def __init__(self, batch_size, padding_index, maxlen=512, batch_criteria='token',
-                 epoch_shuffle=True, sampling_mode=False, device='cuda', **kwargs):
-        self.fields = [('src_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
-                  ('tgt_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
-                  ('src_len', data.Field(sequential=False, use_vocab=False)),
-                  ('tgt_len', data.Field(sequential=False, use_vocab=False))]
-        self.padding_index = padding_index
-        self.batch_size = batch_size
-        self.batch_criteria = batch_criteria
-        self.epoch_shuffle = epoch_shuffle
-        self.sampling_mode = sampling_mode
-        self.device = device
-        self.maxlen = maxlen
-        self.examples = self.make_examples()
-        super(TorchTextMTBase, self).__init__(self.examples, self.fields, **kwargs)
-        batch_size_fn = max_tok_len if batch_criteria == 'token' else null_count
-        self.ds = data.BucketIterator(sort_within_batch=epoch_shuffle, shuffle=epoch_shuffle, dataset=self, device=device,
-                                      batch_size=batch_size, batch_size_fn=batch_size_fn, sort_key=self.sort_key)
-
-    @abstractmethod
-    def make_examples(self):
-        pass
-
-    def examplify(self, src, tgt):
-        def partial_examplify(partial_src, partial_tgt):
-            def to_list(idx):
-                src = truncate(partial_src.iloc[idx].texts, self.maxlen)
-                tgt = truncate(partial_tgt.iloc[idx].texts, self.maxlen)
-                return [src, tgt, len(src), len(tgt)]
-
-            examples = [data.Example.fromlist(to_list(i), self.fields) for i in range(len(partial_src))]
-            l.extend(examples)
-
-        with Manager() as manager:
-            l = manager.list()
-            procs = []
-            num_thread = 16
-            data_per_thread = len(src) // num_thread
-            for i in range(num_thread + 1):
-                proc = Process(target=partial_examplify, args=(src.iloc[i * data_per_thread:(i + 1) * data_per_thread],
-                                                               tgt.iloc[i * data_per_thread:(i + 1) * data_per_thread]))
-                procs.append(proc)
-                proc.start()
-            for proc in procs:
-                proc.join()
-            examples = list(l)
-        return examples
-
-    def batch_per_epoch(self):
-        if self.batch_criteria == 'token':
-            avg = sum([i.tgt_len for i in self.examples]) / len(self.examples)
-            avg_batch = self.batch_size / avg
-            return int(len(self.examples) / avg_batch)
-        else:
-            return int(len(self.examples) / self.batch_size)
-
-    def iterator(self):
-        def reformat(batch):
-            return {'src': batch.src_texts,
-                    'src_len': batch.src_len,
-                    'tgt': batch.tgt_texts[:, :-1],
-                    'tgt_len': batch.tgt_len - 1,
-                    'label': batch.tgt_texts[:, 1:]}
-
-        self.ds.create_batches()
-        for sample in self.ds:
-            yield reformat(sample)
-
-    def to_iterator(self):
-        return self.iterator()
-
-
-class TorchTextMTMono(TorchTextMTBase):
-    def __init__(self, src_filepath, tgt_filepath, batch_size, padding_index, maxlen=512, batch_criteria='token',
-                 epoch_shuffle=True, sampling_mode=False, device='cuda', **kwargs):
-        self.fields = [('src_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
-                  ('tgt_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
-                  ('src_len', data.Field(sequential=False, use_vocab=False)),
-                  ('tgt_len', data.Field(sequential=False, use_vocab=False))]
-        self.src = maybe_read(src_filepath[0])  # temporary implementation.
-        self.tgt = maybe_read(tgt_filepath[0])
-        super(TorchTextMTMono, self).__init__(batch_size, padding_index, maxlen, batch_criteria, epoch_shuffle,
-                                              sampling_mode, device, **kwargs)
-
-    def make_examples(self):
-        return self.examplify(self.src, self.tgt)
-
-
-class TorchTextMTMulti(TorchTextMTBase):
-    def __init__(self, file_path, batch_size, padding_index, maxlen=512, batch_criteria='token',
-                 epoch_shuffle=True, sampling_mode=False, device='cuda', **kwargs):
-        self.fields = [('src_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
-                  ('tgt_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
-                  ('src_len', data.Field(sequential=False, use_vocab=False)),
-                  ('tgt_len', data.Field(sequential=False, use_vocab=False))]
-        self.file_path = file_path
-        super(TorchTextMTMulti, self).__init__(batch_size, padding_index, maxlen, batch_criteria, epoch_shuffle,
-                                              sampling_mode, device, **kwargs)
-
-    def make_examples(self):
-        res = []
-        for pair in self.file_path:
-            src, tgt = maybe_read(pair[0]), maybe_read(pair[1])
-            res.extend(self.examplify(src, tgt))
-            res.extend(self.examplify(tgt, src))
-        return res
+#
+# class BaseBatchfier(Dataset):
+#     def __init__(self, batch_size: int = 32, seq_len=512, minlen=50,
+#                  criteria: str = 'lens',
+#                  padding_index=70000, epoch_shuffle=False, sampling_mode=False, dynamic_batch=True, device='cuda'):
+#         super(BaseBatchfier, self).__init__()
+#         self.minlen = minlen
+#         self.size = batch_size
+#         self.criteria = criteria
+#         self.seq_len = seq_len
+#         self.padding_index = padding_index
+#         self.epoch_shuffle = epoch_shuffle
+#         self.device = device
+#         self.dynamic_batch = dynamic_batch
+#         self.sampling_mode = sampling_mode
+#
+#         # self.size = len(self.df) / num_buckets
+#
+#     @abstractmethod
+#     def batch_sampler(self,):
+#         pass
+#
+#     @abstractmethod
+#     def collate_fn(self, inp):
+#         pass
+#
+#     def truncate_small(self, df, criteria='lens'):
+#         lens = np.array(df[criteria])
+#         indices = np.nonzero((lens < self.minlen).astype(np.int64))[0]
+#         return df.drop(indices)
+#
+#     def truncate_large(self, texts, lens):
+#         new_texts = []
+#         new_lens = []
+#         for i in range(len(texts)):
+#             text = texts[i]
+#             if len(text) > self.maxlen:
+#                 new_texts.append(text[:self.maxlen])
+#                 new_lens.append(self.maxlen)
+#             else:
+#                 remainder = len(text) % self.seq_len
+#                 l = lens[i]
+#                 if remainder and remainder < 10:
+#                     text = text[:-remainder]
+#                     l = l - remainder
+#                 new_texts.append(text)
+#                 new_lens.append(l)
+#         return new_texts, new_lens
+#
+#     def batch_indice(self, df):
+#         num_buckets = len(df) // self.size + (len(df) % self.size != 0)
+#         bs = self.size
+#         ind = [i * bs for i in range(num_buckets)]
+#         if self.epoch_shuffle:
+#             random.shuffle(ind)
+#         return ind
+#
+#     def sort(self, df):
+#         return df.sort_values(self.criteria).reset_index(drop=True)
+#
+#     def to_iterator(self):
+#         return DataLoader(self, batch_sampler=self.batch_sampler(), collate_fn=self.collate_fn)
 
 
 class MTBatchfier(BaseBatchfier):
-    def __init__(self, src_filepaths, tgt_filepaths, batch_size: int = 32, seq_len=512, minlen=50, maxlen: int = 4096,
+    def __init__(self, src_filepaths, tgt_filepaths, batch_size: int = 32, seq_len=512, minlen=50, maxlen=4096,
                  criteria: str = 'tgt_lens', padding_index=30000, epoch_shuffle=True,
                  sampling_mode=False, device='cuda'):
         super(MTBatchfier, self).__init__(batch_size, seq_len, minlen, maxlen, criteria, padding_index,
                                           epoch_shuffle, device)
         self.fl = (src_filepaths, tgt_filepaths)
-        self.df, self.tot_len, self.eos_idx = self.initialize()
+        self.dfs, self.tot_len, self.eos_idx = self.initialize()
         self.sampling_mode = sampling_mode
 
     def read_file(self, src, tgt):
         src = maybe_read(src)
         tgt = maybe_read(tgt)
-        src_texts = [truncate(i, self.seq_len) for i in src.texts]
-        tgt_texts = [truncate(i, self.seq_len) for i in tgt.texts]
-        src_len = [len(i) for i in src_texts]
-        tgt_len = [len(i) for i in tgt_texts]
-        return pd.DataFrame({'src_texts': src_texts, 'src_lens': src_len,
-                             'tgt_texts': tgt_texts, 'tgt_lens': tgt_len})
+        src = [truncate(i, self.maxlen) for i in src.texts]
+        src_len = [len(i) for i in src]
+        tgt = [truncate(i, self.maxlen) for i in tgt.texts]
+        tgt_len = [len(i) for i in tgt]
+        return pd.DataFrame({'src_texts': src, 'src_lens': src_len,
+                             'tgt_texts': tgt, 'tgt_lens': tgt_len})
 
     def initialize(self):
         l = 0
@@ -257,29 +371,28 @@ class MTBatchfier(BaseBatchfier):
             temp = self.read_file(src, tgt)
             l += len(temp)
             dfs.append(temp)
-        df = pd.concat(dfs, ignore_index=True)
         eos = dfs[-1].tgt_texts[0][-1]
-        return df, l, eos
+        return dfs, l, eos
 
     def __len__(self):
         return self.tot_len
 
     def __iter__(self):
-        df = self.df
-        if self.epoch_shuffle:
-            df = self.sort(df)
-        indice = self.batch_indice(df)
-        for l in indice:
-            cur_batch = df.iloc[l:l + self.size]
-            src_texts = cur_batch['src_texts'].tolist()
-            src_lens = cur_batch['src_lens'].tolist()
-            tgt_texts = cur_batch['tgt_texts'].tolist()
-            tgt_lens = cur_batch['tgt_lens'].tolist()
-            for i in range(len(src_texts)):
-                if self.sampling_mode:
-                    yield src_texts[i], src_lens[i], tgt_texts[i][:2], 2
-                else:
-                    yield src_texts[i], src_lens[i], tgt_texts[i], tgt_lens[i]
+        for df in self.dfs:
+            if self.epoch_shuffle:
+                df = self.sort(df)
+            indice = self.batch_indice(df)
+            for l in indice:
+                cur_batch = df.iloc[l:l + self.size]
+                src_texts = cur_batch['src_texts'].tolist()
+                src_lens = cur_batch['src_lens'].tolist()
+                tgt_texts = cur_batch['tgt_texts'].tolist()
+                tgt_lens = cur_batch['tgt_lens'].tolist()
+                for i in range(len(src_texts)):
+                    if self.sampling_mode:
+                        yield src_texts[i], src_lens[i], tgt_texts[i][:2], 2
+                    else:
+                        yield src_texts[i], src_lens[i], tgt_texts[i], tgt_lens[i]
 
     def collate_fn(self, batch):
         src_texts = [torch.Tensor(item[0]).long() for item in batch]
@@ -293,6 +406,117 @@ class MTBatchfier(BaseBatchfier):
                 'tgt': tgt_texts.to(self.device)[:, :-1],
                 'tgt_len': tgt_lens.to(self.device) - 1,
                 'label': tgt_texts[:, 1:].to(self.device)}
+#
+# class MTBatchfier(BaseBatchfier):
+#     def __init__(self, src_filepaths, tgt_filepaths, batch_size: int = 32, seq_len=512, minlen=50,
+#                  criteria: str = 'tgt_lens', padding_index=30000, epoch_shuffle=True,
+#                  sampling_mode=False, dynamic_batch=True, device='cuda'):
+#         super(MTBatchfier, self).__init__(batch_size, seq_len, minlen, criteria, padding_index,
+#                                           epoch_shuffle, sampling_mode, dynamic_batch, device)
+#         self.fl = (src_filepaths, tgt_filepaths)
+#         self.df, self.tot_len, self.eos_idx = self.initialize()
+#         self.sampling_mode = sampling_mode
+#         self.avg_batch_size = self.average_batch_size()
+#
+#     def average_batch_size(self):
+#         if self.dynamic_batch:
+#             avg = sum([sum(i) for i in zip(self.df.src_lens, self.df.tgt_lens)]) / len(self.df)
+#             avg_batch = self.size / avg
+#             return int(avg_batch +1)
+#         else:
+#             return self.size
+#
+#     def batch_per_epoch(self):
+#         return int(self.avg_batch_size / len(self.df))
+#
+#     def read_file(self, src, tgt):
+#         src = maybe_read(src)
+#         tgt = maybe_read(tgt)
+#         src_texts = [truncate(i, self.seq_len) for i in src.texts]
+#         tgt_texts = [truncate(i, self.seq_len)[:2] if self.sampling_mode else truncate(i, self.seq_len)
+#                      for i in tgt.texts]
+#         src_len = [len(i) for i in src_texts]
+#         tgt_len = [2 if self.sampling_mode else len(i) for i in tgt_texts]
+#         key = [data.interleave_keys(a, b) for a, b in zip(src_len, tgt_len)]
+#         return pd.DataFrame({'src_texts': src.texts, 'src_lens': src_len,
+#                              'tgt_texts': tgt.texts, 'tgt_lens': tgt_len, 'key':key})
+#
+#     def initialize(self):
+#         l = 0
+#         dfs = []
+#         for src, tgt in zip(*self.fl):
+#             temp = self.read_file(src, tgt)
+#             l += len(temp)
+#             dfs.append(temp)
+#         eos = dfs[-1].tgt_texts[0][-1]
+#         return pd.concat(dfs, ignore_index=True), l, eos
+#
+#     def static_batch_sampler(self):
+#         indices = [(i, s[-1]) for i, s in enumerate(self.df.key.tolist())]
+#         if self.epoch_shuffle:
+#             random.shuffle(indices)
+#         pooled_indices = []
+#         # create pool of indices with similar lengths
+#         for i in range(0, len(indices), self.avg_batch_size * 100):
+#             pooled_indices.extend(sorted(indices[i:i + self.size * 100], key=lambda x: x[1]))
+#
+#         pooled_indices = [x[0] for x in pooled_indices]
+#
+#         # yield indices for current batch
+#         for i in range(0, len(pooled_indices), self.size):
+#             yield pooled_indices[i:i + self.size]
+#
+#     def dynamic_batch_sampler(self):
+#         def get_batch_indices(pos):
+#             maxlen = 0
+#             cur_batch_indices = []
+#             while pos < len(indices):
+#                 new = pooled_indices[pos]
+#                 next_tot = max(new[1], maxlen) * (len(cur_batch_indices) + 1)
+#                 if next_tot > self.size:
+#                     break
+#                 cur_batch_indices.append(new[0])
+#                 pos +=1
+#                 if new[1] > maxlen:
+#                     maxlen = new[1]
+#             return pos, cur_batch_indices
+#         indices = [(i, s.tgt_lens, s.key) for i, s in self.df.iterrows()]
+#         if self.epoch_shuffle:
+#             random.shuffle(indices)
+#         pooled_indices = []
+#         cur_pos = 0
+#         for i in range(0, len(indices), self.avg_batch_size * 200):
+#             pooled_indices.extend(sorted(indices[i:i + self.size * 200], key=lambda x: x[-1], reverse=True))
+#
+#         while cur_pos < len(indices):
+#             cur_pos, batch_indices = get_batch_indices(cur_pos)
+#             yield batch_indices
+#
+#     def batch_sampler(self,):
+#         if self.dynamic_batch:
+#             return self.dynamic_batch_sampler()
+#         else:
+#             return self.static_batch_sampler()
+#
+#     def __len__(self):
+#         return self.tot_len
+#
+#     def __getitem__(self, index):
+#         series = self.df.iloc[index]
+#         return series.src_texts, series.src_lens, series.tgt_texts, series.tgt_lens
+#
+#     def collate_fn(self, batch):
+#         src_texts = [torch.Tensor(item[0]).long() for item in batch]
+#         src_texts = torch.nn.utils.rnn.pad_sequence(src_texts, batch_first=True, padding_value=self.padding_index)
+#         tgt_texts = [torch.Tensor(item[2]).long() for item in batch]
+#         tgt_texts = torch.nn.utils.rnn.pad_sequence(tgt_texts, batch_first=True, padding_value=self.padding_index)
+#         src_lens = torch.Tensor([item[1] for item in batch]).long()
+#         tgt_lens = torch.Tensor([item[3] for item in batch]).long()
+#         return {'src': src_texts.to(self.device),
+#                 'src_len': src_lens.to(self.device),
+#                 'tgt': tgt_texts.to(self.device)[:, :-1],
+#                 'tgt_len': tgt_lens.to(self.device) - 1,
+#                 'label': tgt_texts[:, 1:].to(self.device)}
 
 
 class MultitaskBatchfier(BaseBatchfier):

@@ -61,21 +61,28 @@ def get_batchfier(args):
                                                         args.batch_size, args.seq_len,
                                                         padding_index=args.padding_index, device=args.device)
         else:
-            train_batchfier = TorchTextMTMono(args.train_src_path, args.train_tgt_path,
+            # train_batchfier = MTBatchfier(args.train_src_path, args.train_tgt_path,
+            #                               args.batch_size // args.update_step, seq_len=args.seq_len,
+            #                               padding_index=args.padding_index, device=args.device)
+            # test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path,
+            #                              args.batch_size // args.update_step, seq_len=args.seq_len, epoch_shuffle=False,
+            #                              padding_index=args.padding_index, device=args.device)
+            train_batchfier = TorchTextMTMono(args.train_src_path, args.train_tgt_path, args.train_example_path,
                                               args.batch_size // args.update_step, padding_index=args.padding_index,
                                               maxlen=args.seq_len, device=args.device)
-            test_batchfier = TorchTextMTMono(args.test_src_path, args.train_tgt_path,
+            test_batchfier = TorchTextMTMono(args.test_src_path, args.test_tgt_path, args.test_example_path,
                                              args.batch_size // args.update_step,
                                              padding_index=args.padding_index, maxlen=args.seq_len,
-                                             epoch_shuffle=False, device=args.device)
+                                             device=args.device)
     elif args.task == 'mnmt':
         train_batchfier = TorchTextMTMulti(args.train_path,
-                                           args.batch_size // args.update_step, padding_index=args.padding_index,
-                                           maxlen=args.seq_len, device=args.device)
+                                           args.batch_size // args.update_step, args.train_example_path,
+                                           padding_index=args.padding_index,
+                                           maxlen=args.seq_len, target_lang=args.target_lang, device=args.device)
         test_batchfier = TorchTextMTMulti(args.test_path,
-                                          args.batch_size // args.update_step,
+                                          args.batch_size // args.update_step, args.test_example_path,
                                           padding_index=args.padding_index, maxlen=args.seq_len,
-                                          epoch_shuffle=False, device=args.device)
+                                          target_lang=args.target_lang, device=args.device)
         # train_batchfier = MTBatchfier(args.train_src_path, args.train_tgt_path, args.batch_size, args.seq_len,
         #                               padding_index=args.padding_index, device=args.device)
         # test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, args.batch_size, args.seq_len,
@@ -135,7 +142,6 @@ def main_pure_torch(args):
 
     model_parameters = filter(lambda p: p.requires_grad, model.parameters())
     params = sum([np.prod(p.size()) for p in model_parameters])
-    print(model)
     print('# params : {}'.format(params))
     if not os.path.exists(args.savename):
         os.makedirs(args.savename)

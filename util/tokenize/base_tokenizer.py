@@ -22,12 +22,14 @@ class BaseTokenizer(ABC):
         self.imap = IMap(dir_path, prefix, vocab_size) if use_imap else None
 
     @staticmethod
-    def _get_files(path, filter_train=False):
+    def _get_files(path, filter_train=False, filter_words=None):
         if os.path.isfile(path):
             return [path]
         elif os.path.isdir(path):
             # check whether the files are split into test, val set
             temp = get_files(path)
+            if filter_words:
+                temp = list(filter(lambda x: filter_words in os.path.relpath(x, path), temp))
             # temp = list(filter(lambda x: '/raw' not in os.path.dirname(x), temp))
             trains = list(filter(lambda x: 'train' in os.path.basename(x), temp))
             if filter_train and trains:
@@ -80,7 +82,7 @@ class BaseTokenizer(ABC):
             self.tokenizer, self.is_trained = self._load_tokenizer(self.directory_path, self.encoder_filename)
 
         procs = []
-        fl = self._get_files(inp_path)
+        fl = self._get_files(inp_path, **kwargs)
         input_isdir = os.path.isdir(inp_path)
 
         for index, inp in enumerate(fl):
@@ -90,7 +92,7 @@ class BaseTokenizer(ABC):
             else:
                 out = os.path.join(self.directory_path, os.path.splitext(inp_path)[0] + '_encoded.pkl')  # deprecated
 
-            self._encode_file(inp, out)
+            self._encode_file(inp, out, **kwargs)
             # proc = Process(target=self._encode_file, args=(inp, out))
         #     procs.append(proc)
         #     proc.start()
@@ -113,7 +115,7 @@ class SpaceTokenizer(BaseTokenizer, ABC):
 
     def _learn_tokenizer(self, inp_path, **kwargs):
         full_path = os.path.join(self.directory_path, inp_path)
-        fl = self._get_files(full_path, filter_train=True)
+        fl = self._get_files(full_path, filter_train=True, **kwargs)
         cnt = collections.Counter()
         for i in fl:
             res = self._read_file(i)
@@ -242,7 +244,7 @@ class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
         input_isdir = os.path.isdir(inp_path)
         if not os.path.exists(out_path) and input_isdir:
             os.makedirs(out_path)
-        fl = self._get_files(inp_path, filter_train=True)
+        fl = self._get_files(inp_path, filter_train=True, **kwargs)
         procs = []
         # for index, inp in enumerate(fl):
         #     basename = os.path.basename(inp)

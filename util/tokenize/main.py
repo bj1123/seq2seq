@@ -26,6 +26,7 @@ def get_parser():
     parser.add_argument("--morph-analyzer-type", type=str, default="none")
     parser.add_argument("--split-jamo", action='store_true')
     parser.add_argument("--use-control-token", action='store_true')
+    parser.add_argument("--target-lang", type=str)  # only for mnmt
     return parser
 
 
@@ -46,7 +47,8 @@ def main():
                         tokenizer_class=tokenizer_class, morph_analyzer_class=morphs_analyzer_class,
                         tokens_to_add=tokens_to_add,
                         jamo=args.split_jamo,
-                        use_control_token=args.use_control_token)
+                        use_control_token=args.use_control_token,
+                        target_lang=args.target_lang)
     indexer.corpus_encode(args.src_dir)
 
 

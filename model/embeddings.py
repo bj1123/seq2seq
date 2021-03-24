@@ -19,7 +19,7 @@ class Word_Embedding(nn.Module):
         if not adaptive_embedding:
             self.morph = nn.Embedding(morph_size+1,morph_embedding_size,morph_size)
         else:
-            self.morph = Adaptive_Embedding(morph_size+1,morph_embedding_size,morph_embedding_size,cutoffs,div_val)
+            self.morph = AdaptiveEmbedding(morph_size+1,morph_embedding_size,morph_embedding_size,cutoffs,div_val)
 
         self.pos = nn.Embedding(pos_size+1,pos_embedding_size,pos_size)
         self.padding = nn.ConstantPad1d(3,0.0)
@@ -65,29 +65,67 @@ class Word_Embedding(nn.Module):
         return mres
 
 
-class Adaptive_Embedding(nn.Module):
-    def __init__(self, vocab_size:int, base_embedding_dim:int, projection_dim:int, cutoffs:List, div_val=1):
-        super(Adaptive_Embedding, self).__init__()
-        self.n_embeddings = len(cutoffs) + 1
+class StructuredEmbedding(nn.Module):
+    def __init__(self, vocab_size:int, embedding_dim:int, n_cluster=None, entry_per_cluster=None):
+        super(StructuredEmbedding, self).__init__()
+        self.vocab_size = vocab_size
+        self.embedding_size = embedding_dim
+        self.n_cluster = n_cluster if n_cluster else 5
+        self.entry_per_cluster = entry_per_cluster if entry_per_cluster else 1000 // self.n_cluster
+        self.cluster_weights = nn.Embedding(vocab_size, self.n_cluster)
+        self.base_weights = nn.Embedding(vocab_size, self.n_cluster * self.entry_per_cluster // 5)
+        self.base_embeddings = nn.ParameterList([nn.Parameter(torch.Tensor(self.entry_per_cluster, embedding_dim))
+                                                 for _ in range(self.n_cluster)])
+        for i in self.base_embeddings:
+            torch.nn.init.normal_(i, std=0.02)
+        self.proj = nn.Linear(self.n_cluster * self.entry_per_cluster // 5, self.n_cluster * self.entry_per_cluster)
+
+    def forward(self, x):
+        cluster_weights = self.cluster_weights(x)  # [bs, l, n_clusters]
+        tgt_embs = []
+        base_weights = self.proj(self.base_weights(x))
+        for i in range(self.n_cluster):
+            l, r = i * self.entry_per_cluster, (i+1) * self.entry_per_cluster
+            target_base_weights = base_weights[...,l:r]  # [bs, l, entry]
+            tgt_embs.append(torch.matmul(target_base_weights, self.base_embeddings[i]))  # [bs, l, emb]
+        tgt_embs = torch.stack(tgt_embs, 2)  # [bs, l, n_clusters, emb]
+        emb = torch.matmul(cluster_weights.unsqueeze(2), tgt_embs)
+        emb = emb.squeeze(2)
+        return emb
+
+
+class AdaptiveEmbedding(nn.Module):
+    def __init__(self, vocab_size:int, base_embedding_dim:int, projection_dim:int,
+                 cutoffs=None, div_val=2):
+        super(AdaptiveEmbedding, self).__init__()
+        self.vocab_size = vocab_size
+        self.n_cluster = len(cutoffs) + 1 if cutoffs is not None else 4
         self.projection_dim = projection_dim
         self.scale = projection_dim**0.5
+        cutoffs = cutoffs if cutoffs else self.compute_cutoffs()
         self.cutoffs = [0] + cutoffs + [vocab_size]
-        self.embedding_dims = [base_embedding_dim // (div_val**i) for i in range(self.n_embeddings)]
+        self.embedding_dims = [base_embedding_dim // (div_val**i) for i in range(self.n_cluster)]
         # print(self.embedding_dims)
         self.embeddings = nn.ModuleList([nn.Embedding(self.cutoffs[i+1]-self.cutoffs[i],
                                                       self.embedding_dims[i])
-                                         if i != self.n_embeddings - 1
+                                         if i != self.n_cluster - 1
                                          else nn.Embedding(self.cutoffs[i+1]-self.cutoffs[i] + 1,
                                                            self.embedding_dims[i],self.cutoffs[i+1]-self.cutoffs[i])# for UNK
-                                         for i in range(self.n_embeddings)])
+                                         for i in range(self.n_cluster)])
+        print(self.embeddings)
         self.proj = nn.ModuleList([nn.Linear(i,projection_dim) for i in self.embedding_dims])
 
+    def compute_cutoffs(self):
+        target_ratio = [0.01, 0.05, 0.2]
+        return [int(i*self.vocab_size) for i in target_ratio]
+
     def forward(self,x):
-        flat_x = x.view(-1)
-        total_embedding = torch.zeros(flat_x.size(0),self.projection_dim)
-        for i in range(self.n_embeddings):
+        flat_x = x.contiguous().view(-1)
+        total_embedding = torch.zeros(flat_x.size(0),self.projection_dim,
+                                      device=x.device, dtype=torch.half)
+        for i in range(self.n_cluster):
             l,r = self.cutoffs[i], self.cutoffs[i+1]
-            if i == self.n_embeddings - 1:
+            if i == self.n_cluster - 1:
                 r +=1
             mask = (flat_x >=l) & (flat_x<r)
             indices = mask.nonzero().squeeze()
@@ -131,6 +169,8 @@ class TransformerEmbedding(nn.Module):
         self.use_pos_emb = use_pos_emb
         self.seq_len = max_seqlen
 
+        # self.word_embedding = StructuredEmbedding(vocab_size, embedding_dim)
+        # self.word_embedding = AdaptiveEmbedding(vocab_size, embedding_dim, embedding_dim)
         # self.word_embedding = OneEmbed(vocab_size, embedding_dim, padding_index,
         #                                one_emb_type='real', dropout=dropout_rate)
         # self.word_embedding = HashEmbedding(vocab_size, embedding_dim, padding_index)
@@ -155,7 +195,7 @@ class TransformerEmbedding(nn.Module):
 
 class OneEmbed(nn.Module):
     def __init__(self, num_embeddings, embedding_dim, padding_idx,
-                 one_emb_type='binary', dropout=0.5, std=1.0, codenum=64, codebooknum=8,
+                 one_emb_type='binary', dropout=0.5, std=0.0675, codenum=64, codebooknum=8,
                  layernum=1, binary_dropout=0.1):
         super(OneEmbed, self).__init__()
         self.num_embeddings = num_embeddings
@@ -163,9 +203,10 @@ class OneEmbed(nn.Module):
         self.one_emb_type = one_emb_type
         self.layernum = layernum
         self.padding_idx = padding_idx
-        self.weight = nn.Parameter(torch.Tensor(1, embedding_dim)) #embedding for all tokens
-        nn.init.normal_(self.weight, std=0.02)
-        self.linear = nn.Sequential(nn.Linear(embedding_dim, embedding_dim), nn.ReLU(), nn.Dropout(dropout))
+        self.weight = nn.Parameter(torch.Tensor(1, embedding_dim))  #embedding for all tokens
+        nn.init.normal_(self.weight, std=std)
+        self.linear = nn.Sequential(nn.Linear(embedding_dim, embedding_dim * 8), nn.ReLU(), nn.Dropout(dropout),
+                                    nn.Linear(embedding_dim * 8, embedding_dim))
         if self.one_emb_type == 'binary':
             prob = torch.Tensor(codenum, embedding_dim)
             nn.init.constant_(prob, (1 - binary_dropout ** (1.0 / codebooknum)))
@@ -178,7 +219,7 @@ class OneEmbed(nn.Module):
                 [nn.Parameter(torch.normal(mean_m, std_m), requires_grad=False) for _ in range(codebooknum)])
         self.hash2mask = nn.Parameter(torch.randint(0, codenum, (num_embeddings, codebooknum), dtype=torch.long),
                                       requires_grad=False)
-        self.mask = None #mask for each token
+        self.mask = None  # mask for each token
 
     def construct_mask2each_token(self):
         mask = []
@@ -195,12 +236,12 @@ class OneEmbed(nn.Module):
         matrix = self.forward(vocab_vec, dropout=0)
         return matrix
 
-    def forward(self, input):
+    def forward(self, x):
         if self.mask is None:
             self.mask = self.construct_mask2each_token()
-        if input.is_cuda and not self.mask.is_cuda:
+        if x.is_cuda and not self.mask.is_cuda:
             self.mask = self.mask.cuda().to(torch.half)
-        each_token_mask = nn.functional.embedding(input, self.mask, padding_idx=self.padding_idx)
+        each_token_mask = nn.functional.embedding(x, self.mask, padding_idx=self.padding_idx)
         embed = each_token_mask * self.weight.expand_as(each_token_mask)
         embed = self.linear(embed)
         return embed
