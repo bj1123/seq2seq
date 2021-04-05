@@ -203,6 +203,8 @@ class MNMTArgument(BaseArgument):
             files = files_including(os.path.join(dir_path, i), target_name)
             if target_lang:
                 files = list(filter(lambda x: target_lang in os.path.relpath(x, dir_path), files))
+                if files and target_lang in os.path.basename(os.path.dirname(files[0])):
+                    files[1], files[0] = files[0], files[1]
             if files:
                 res.append(files)
         return res
@@ -214,10 +216,11 @@ class MNMTArgument(BaseArgument):
         basename = '{}_{}_{}'.format(data['model_size'], data['learning_rate'], data['positional_encoding'])
         # for debugging
         target_lang = f'_{data["target_lang"]}' if data['target_lang'] else ''
+        mode = '' if model_type == 'plain' else f'_{model_type}'
         data['train_path'] = self.pair_files(data['dir_path'], 'train', data['target_lang'])
-        data['train_example_path'] = os.path.join(data['dir_path'], 'tr_examples' + target_lang)
+        data['train_example_path'] = os.path.join(data['dir_path'], 'tr_examples' + target_lang + mode)
         data['test_path'] = self.pair_files(data['dir_path'], 'test', data['target_lang'])
-        data['test_example_path'] = os.path.join(data['dir_path'], 'te_examples' + target_lang)
+        data['test_example_path'] = os.path.join(data['dir_path'], 'te_examples' + target_lang + mode)
         data['padding_index'] = data['vocab_size'] - 1
         data['savename'] = os.path.join(dirname, basename)
         if data['saved_model_folder'] and data['saved_model_ckpt']:

@@ -100,12 +100,16 @@ class MultiheadAtt(AttBase):
                  dropout_rate:float, dropatt_rate:float=0.0, pre_lnorm=False, **kwargs):
         super(MultiheadAtt, self).__init__(hidden_dim, n_head, head_dim, dropout_rate, dropatt_rate, pre_lnorm)
 
-    def forward(self, q, kv, mem, mask):
+    def forward(self, q, kv, mem, mask, **kwargs):
         query, out, kv, att_prob = self.before_add(q, kv, mem, mask)
         out = out + query
         if not self.pre_lnorm:
             out = self.layer_norm(out)
         return out, kv, att_prob
+
+
+class LanguageWiseAttention(AttBase):
+    pass  # to implement: def projection
 
 
 class SentenceAwareAtt(MultiheadAtt):

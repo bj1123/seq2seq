@@ -7,17 +7,17 @@ DATASET=un_pc
 MODEL=plain
 DATATYPE=mono
 TRAINING_TYPE=semi/en
-PAIR=ar-en
+PAIR=en-es
 PENCODING=absolute
 LR=0.00021
-CKPT=epoch_9
+CKPT=epoch_6
 
 CUDA_VISIBLE_DEVICES=0 python sample.py \
   --is-sampling \
   --task seq2seq \
-  --src-path ../data/$DATASET/$DATATYPE/$PAIR/encoded_mapped/ar \
+  --src-path ../data/$DATASET/$DATATYPE/$PAIR/encoded_mapped/es \
   --tgt-path ../data/$DATASET/$DATATYPE/$PAIR/encoded_mapped/en \
-  --saved-model-folder data/saved_model/$DATASET/$MODEL/base_$LR''_$PENCODING \
+  --saved-model-folder data/saved_model/$DATASET/$DATATYPE/$PAIR/$MODEL/base_$LR''_$PENCODING \
   --saved-model-ckpt $CKPT \
   --sampling-mode beam \
   --positional-encoding $PENCODING \

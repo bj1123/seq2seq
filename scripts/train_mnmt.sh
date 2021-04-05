@@ -11,6 +11,7 @@ CUDA_VISIBLE_DEVICES=0 python main.py \
  --loss-type plain \
  --positional-encoding $PENCODING \
  --task mnmt \
+ --target-lang en \
  --model-type $MODEL \
  --dataset-name $DATASET \
  --model-size base;

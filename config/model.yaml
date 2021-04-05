@@ -9,6 +9,8 @@ base:
   dropout_rate: 0.1
   dropatt_rate: 0.0
   pre_lnorm: False
+  num_src_lang: 5
+  num_tgt_lang: 1
 
 large:
   hidden_dim: 1024
@@ -22,4 +24,7 @@ large:
   dropout_rate: 0.1
   dropatt_rate: 0.0
   pre_lnorm: False
+  num_src_lang: 5
+  num_tgt_lang: 1
+
 

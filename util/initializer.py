@@ -27,15 +27,7 @@ class Initializer:
 
         elif classname.find('StructuredEmbedding') != -1:
             nn.init.normal_(m.cluster_weights.weight, 0.2, self.value)
-            nn.init.normal_(m.base_weights.weight, 0, self.value * 1.5)
-            nn.init.normal_(m.proj.weight, 0, self.value)
-            nn.init.normal_(m.proj.bias, 0.005, 0.02)
-
-        elif classname.find('OneEmbed') != -1:
-            nn.init.normal_(m.cluster_weights.weight, 0.2, self.value)
-            nn.init.normal_(m.base_weights.weight, 0, self.value * 1.5)
-            nn.init.normal_(m.proj.weight, 0, self.value)
-            nn.init.normal_(m.proj.bias, 0.005, 0.02)
+            nn.init.normal_(m.base_weights.weight, 0, self.value)
 
         elif classname.find('Conv2d') != -1:
             if hasattr(m, 'weight') and m.weight is not None:

@@ -104,8 +104,6 @@ class Trainer:
                     torch.save(model.state_dict(),
                                os.path.join(self.save_name,'epoch_{}_ckpt_{}'.format(self.epoch,
                                                                                     tot_cnt // self.target_cnt)))
-
-
         pbar.close()
         loss = math.exp(tot_loss / tot_cnt)
         return loss
@@ -122,22 +120,20 @@ class Trainer:
         criteria.clear_loss()
         pbar = tqdm(batchfier)
         pbar_cnt = 0
-        step_loss = 0
         for inp in pbar:
             with torch.no_grad():
                 if check_empty_text(inp):
                     continue
                 out = model(inp)
-                loss = criteria(out, inp)
-                step_loss += loss.item()
+                _ = criteria(out, inp)
                 pbar_cnt += 1
                 description = criteria.get_description()
                 pbar.set_description(description)
         pbar.close()
-        loss = math.exp(step_loss / pbar_cnt)
+        loss = criteria.cum_loss / criteria.cum_cnt
         if getattr(self.schedulers, 'decay_on_valid', None):
             self.schedulers.decay_baselr(loss)
-        return loss
+        return math.exp(loss)
 
     def update_description(self, description, n_bar):
         description += 'lr : %f, iter : %d ' % (self.schedulers.get_last_lr()[0], n_bar)

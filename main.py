@@ -32,6 +32,14 @@ def get_model(args):
                                        pos_enc=args.positional_encoding, shared_embedding=args.shared_embedding,
                                        tie_embedding=args.tie_embedding)
 
+        elif args.model_type == 'language-specific':
+            model = LanguageSpecificMT(args.vocab_size, args.seq_len, args.hidden_dim, args.projection_dim,
+                                       args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
+                                       args.num_src_lang, args.num_tgt_lang, args.dropout_rate,
+                                       args.dropatt_rate, args.padding_index, pre_lnorm=args.pre_lnorm,
+                                       pos_enc=args.positional_encoding, shared_embedding=args.shared_embedding,
+                                       tie_embedding=args.tie_embedding)
+
         else:
             model = EncoderDecoderModel(args.vocab_size, args.seq_len, args.hidden_dim, args.projection_dim,
                                         args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
@@ -71,18 +79,28 @@ def get_batchfier(args):
                                               args.batch_size // args.update_step, padding_index=args.padding_index,
                                               maxlen=args.seq_len, device=args.device)
             test_batchfier = TorchTextMTMono(args.test_src_path, args.test_tgt_path, args.test_example_path,
-                                             args.batch_size // args.update_step,
-                                             padding_index=args.padding_index, maxlen=args.seq_len,
-                                             device=args.device)
+                                             args.batch_size // args.update_step, padding_index=args.padding_index,
+                                             maxlen=args.seq_len, device=args.device)
     elif args.task == 'mnmt':
-        train_batchfier = TorchTextMTMulti(args.train_path,
-                                           args.batch_size // args.update_step, args.train_example_path,
-                                           padding_index=args.padding_index,
-                                           maxlen=args.seq_len, target_lang=args.target_lang, device=args.device)
-        test_batchfier = TorchTextMTMulti(args.test_path,
-                                          args.batch_size // args.update_step, args.test_example_path,
-                                          padding_index=args.padding_index, maxlen=args.seq_len,
-                                          target_lang=args.target_lang, device=args.device)
+        if args.model_type == 'plain':
+            train_batchfier = TorchTextMTMulti(args.train_path,
+                                               args.batch_size // args.update_step, args.train_example_path,
+                                               padding_index=args.padding_index,
+                                               maxlen=args.seq_len, target_lang=args.target_lang, device=args.device)
+            test_batchfier = TorchTextMTMulti(args.test_path,
+                                              args.batch_size // args.update_step, args.test_example_path,
+                                              padding_index=args.padding_index,
+                                              maxlen=args.seq_len, target_lang=args.target_lang, device=args.device)
+        else:
+            train_batchfier = TorchTextMTMultiTask(args.train_path,
+                                                   args.batch_size // args.update_step, args.train_example_path,
+                                                   padding_index=args.padding_index,
+                                                   maxlen=args.seq_len, target_lang=args.target_lang,
+                                                   device=args.device)
+            test_batchfier = TorchTextMTMultiTask(args.test_path,
+                                                  args.batch_size // args.update_step, args.test_example_path,
+                                                  padding_index=args.padding_index,
+                                                  maxlen=args.seq_len, target_lang=args.target_lang, device=args.device)
         # train_batchfier = MTBatchfier(args.train_src_path, args.train_tgt_path, args.batch_size, args.seq_len,
         #                               padding_index=args.padding_index, device=args.device)
         # test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, args.batch_size, args.seq_len,
@@ -124,6 +142,7 @@ def get_trainer(args, model, train_batchfier, test_batchfier):
         opt_level = 'O2'
         model, optimizer = apex.amp.initialize(model, optimizer, opt_level=opt_level)
     decay_step = train_batchfier.batch_per_epoch() * args.n_epoch // args.update_step
+    print(decay_step)
     scheduler = WarmupLinearSchedule(optimizer, args.warmup_step, decay_step, args.decay_on_valid)
     # scheduler = WarmupExponentialSchedule(optimizer, args.warmup_step, len(train_batchfier) // args.update_step)
     criteria = get_loss(args, train_batchfier)
@@ -135,14 +154,13 @@ def get_trainer(args, model, train_batchfier, test_batchfier):
 
 def main_pure_torch(args):
     model = get_model(args)
+    model_parameters = filter(lambda p: p.requires_grad, model.parameters())
+    params = sum([np.prod(p.size()) for p in model_parameters])
+    print('# params : {}'.format(params))
     train_batchfier, test_batchfier = get_batchfier(args)
     trainer = get_trainer(args, model, train_batchfier, test_batchfier)
     prev_step = 0
     res = []
-
-    model_parameters = filter(lambda p: p.requires_grad, model.parameters())
-    params = sum([np.prod(p.size()) for p in model_parameters])
-    print('# params : {}'.format(params))
     if not os.path.exists(args.savename):
         os.makedirs(args.savename)
 
@@ -153,8 +171,8 @@ def main_pure_torch(args):
         res.append(test_loss)
         savepath = os.path.join(args.savename, 'epoch_{}'.format(i))
         torch.save(model.state_dict(), savepath)
+        print(res)
         # test
-    print(res)
 
 
 # def main_pl(args):

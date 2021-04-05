@@ -13,10 +13,9 @@ VOCAB_SIZE=30000
 # --vocab-size 10000;
 
 python util/tokenize/main.py \
- --src-dir ../data/un_pc/raw \
- --target-dir ../data/un_pc/semi \
+ --src-dir ../data/un_pc/raw/en-es \
+ --target-dir ../data/un_pc/mono/en-es \
  --tokenizer-type WP \
  --prefix wp_$VOCAB_SIZE \
  --data-type un_pc \
- --target-lang en \
  --vocab-size $VOCAB_SIZE;

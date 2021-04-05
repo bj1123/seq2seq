@@ -13,7 +13,7 @@ from model.modules import TextConv
 class BaseBlock(nn.Module, ABC):
     def __init__(self, hidden_dim: int, projection_dim: int, n_heads: int, head_dim: int,
                  dropout_rate: float, dropatt_rate: float, pre_lnorm: bool = False,
-                 att_module = MultiheadAtt, **kwargs):
+                 att_module=MultiheadAtt, **kwargs):
         super(BaseBlock, self).__init__()
         self.self_att = att_module(hidden_dim, n_heads, head_dim, dropout_rate, dropatt_rate, pre_lnorm, **kwargs)
         self.feedforward = ResidualFF(hidden_dim, projection_dim, dropout_rate, pre_lnorm)
@@ -25,7 +25,7 @@ class BaseBlock(nn.Module, ABC):
 
 class EncoderBlock(BaseBlock):
     def __init__(self, hidden_dim: int, projection_dim: int, n_heads: int, head_dim: int,
-                 dropout_rate: float, dropatt_rate: float, pre_lnorm: bool = False, att_module = MultiheadAtt,
+                 dropout_rate: float, dropatt_rate: float, pre_lnorm: bool = False, att_module=MultiheadAtt,
                  **kwargs):
         super(EncoderBlock, self).__init__(hidden_dim, projection_dim, n_heads, head_dim,
                                            dropout_rate, dropatt_rate, pre_lnorm, att_module, **kwargs)
@@ -40,7 +40,7 @@ class EncoderBlock(BaseBlock):
 class DecoderBlock(BaseBlock):
     def __init__(self, hidden_dim: int, projection_dim: int, n_heads: int, head_dim: int,
                  dropout_rate: float, dropatt_rate: float, pre_lnorm: bool = False,
-                 att_module = MultiheadAtt, **kwargs):
+                 att_module=MultiheadAtt, **kwargs):
         super(DecoderBlock, self).__init__(hidden_dim, projection_dim, n_heads, head_dim,
                                            dropout_rate, dropatt_rate, pre_lnorm, att_module, **kwargs)
         self.multihead_att = att_module(hidden_dim, n_heads, head_dim, dropout_rate, dropatt_rate, pre_lnorm, **kwargs)
@@ -56,7 +56,7 @@ class DecoderBlock(BaseBlock):
 
 class SentenceAwareDecoderBlock(DecoderBlock):
     def __init__(self, hidden_dim: int, projection_dim: int, n_heads: int, head_dim: int,
-                 dropout_rate: float, dropatt_rate: float, pre_lnorm: bool = False, att_module = MultiheadAtt,
+                 dropout_rate: float, dropatt_rate: float, pre_lnorm: bool = False, att_module=MultiheadAtt,
                  **kwargs):
         super(SentenceAwareDecoderBlock, self).__init__(hidden_dim, projection_dim, n_heads, head_dim,
                                                         dropout_rate, dropatt_rate, pre_lnorm, att_module)
@@ -82,7 +82,7 @@ class BaseNetwork(nn.Module):
                  n_heads: int, head_dim: int, n_layers: int,
                  dropout_rate: float, dropatt_rate: float,
                  pre_lnorm: bool = False, same_lengths: bool = False, pos_enc: str = 'absolute',
-                 block_type: nn.Module = EncoderBlock, is_bidirectional: bool = False, **kwargs):
+                 block_type: nn.Module = EncoderBlock, is_bidirectional: bool = False, use_embedding=True, **kwargs):
         super(BaseNetwork, self).__init__()
         self.vocab_size = kwargs.get('vocab_size', None)
         self.seq_len = kwargs.get('seq_len', None)
@@ -92,14 +92,16 @@ class BaseNetwork(nn.Module):
         self.same_lengths = same_lengths
         self.is_bidirectional = is_bidirectional
         self.hidden_dim = hidden_dim
-        if self.vocab_size:
-            self.use_pos_emb = 'absolute' in pos_enc
-            if not self.embedding:
-                assert self.seq_len
-                self.embedding = TransformerEmbedding(self.vocab_size, hidden_dim, self.padding_index,
-                                                      self.seq_len, dropout_rate, self.use_pos_emb)
-            else:
-                assert isinstance(self.embedding, TransformerEmbedding)
+        self.use_embedding = use_embedding
+        if use_embedding:
+            if self.vocab_size:
+                self.use_pos_emb = 'absolute' in pos_enc
+                if not self.embedding:
+                    assert self.seq_len
+                    self.embedding = TransformerEmbedding(self.vocab_size, hidden_dim, self.padding_index,
+                                                          self.seq_len, dropout_rate, self.use_pos_emb)
+                else:
+                    assert isinstance(self.embedding, TransformerEmbedding)
         # if not self.embedding_equal_hidden:
         #     self.embedding_proj = nn.Linear(word_embedding_dim,hidden_dim,bias=False)
         pos_encs = [MultiheadAtt for _ in range(n_layers)]
@@ -112,7 +114,6 @@ class BaseNetwork(nn.Module):
         self.main_nets = nn.ModuleList([block_type(hidden_dim, projection_dim, n_heads, head_dim,
                                                    dropout_rate, dropatt_rate, pre_lnorm, pos_encs[i], **key_args)
                                         for i in range(n_layers)])
-
 
     def get_mask(self, mem, inp_lens):
         inp_masks = mask_lengths(inp_lens, reverse=True).byte()
@@ -133,21 +134,21 @@ class BaseNetwork(nn.Module):
 
     def get_relative_encoding_args(self, pos_enc):
         if pos_enc in ['relative', 'graph-relative']:
-            d = {'maxlen': self.seq_len, 'relative_attention_num_buckets': self.seq_len//4,
+            d = {'maxlen': self.seq_len, 'relative_attention_num_buckets': self.seq_len // 4,
                  'is_decoder': not self.is_bidirectional}
         else:
             d = {}
         return d
 
+
 class EncoderNetwork(BaseNetwork):
-    def __init__(self, hidden_dim: int, projection_dim: int,
-                 n_heads: int, head_dim: int, n_layers: int,
-                 dropout_rate: float, dropatt_rate: float,
-                 pre_lnorm: bool = False, same_lengths: bool = False, pos_enc: str = 'absolute', **kwargs):
+    def __init__(self, hidden_dim: int, projection_dim: int, n_heads: int, head_dim: int, n_layers: int,
+                 dropout_rate: float, dropatt_rate: float, pre_lnorm: bool = False, same_lengths: bool = False,
+                 pos_enc: str = 'absolute', use_embedding=True, **kwargs):
         super(EncoderNetwork, self).__init__(hidden_dim, projection_dim, n_heads, head_dim, n_layers,
                                              dropout_rate, dropatt_rate,
                                              pre_lnorm, same_lengths, pos_enc,
-                                             EncoderBlock, True, **kwargs)
+                                             EncoderBlock, True, use_embedding, **kwargs)
 
     def forward(self, x, mem, mask):
         """
@@ -157,8 +158,11 @@ class EncoderNetwork(BaseNetwork):
         :param mask: input mask, size = [batch_size, seq_len, seq_len]
         :return:
         """
-        emb = self.embedding(x, mem)
-        out = emb
+        if self.use_embedding:
+            emb = self.embedding(x, mem)
+            out = emb
+        else:
+            out = x
         new_mems = []
         enc_self_atts = []
         for i in range(self.n_layers):
@@ -174,12 +178,12 @@ class DecoderNetwork(BaseNetwork):
     def __init__(self, hidden_dim: int, projection_dim: int,
                  n_heads: int, head_dim: int, n_layers: int,
                  dropout_rate: float, dropatt_rate: float,
-                 pre_lnorm: bool = False, same_lengths: bool = False, pos_enc: str = 'absolute',
+                 pre_lnorm: bool = False, same_lengths: bool = False, pos_enc: str = 'absolute', use_embedding=True,
                  decoder_block=DecoderBlock, **kwargs):
         super(DecoderNetwork, self).__init__(hidden_dim, projection_dim, n_heads, head_dim, n_layers,
                                              dropout_rate, dropatt_rate,
                                              pre_lnorm, same_lengths, pos_enc,
-                                             decoder_block, False, **kwargs)
+                                             decoder_block, False, use_embedding, **kwargs)
 
     @staticmethod
     def tgt_to_src_mask(src_len, tgt_len):
@@ -200,8 +204,11 @@ class DecoderNetwork(BaseNetwork):
         :param tgt_to_src_mask: input masks of target sentence [Bs, tgt_len, src_len]
         :return:
         """
-        emb = self.embedding(tgt, mem)
-        out = emb
+        if self.use_embedding:
+            emb = self.embedding(tgt, mem)
+            out = emb
+        else:
+            out = tgt
         new_mems = []
         self_att_probs = []
         inter_att_probs = []
@@ -216,12 +223,12 @@ class DecoderNetwork(BaseNetwork):
         return out, new_mems, self_att_probs, inter_att_probs
 
 
-class EncoderDecoderModel(nn.Module):
+class EncoderDecoderBase(nn.Module):
     def __init__(self, vocab_size: int, seq_len: int, hidden_dim: int, projection_dim: int, n_heads: int, head_dim: int,
                  enc_num_layers: int, dec_num_layers: int, dropout_rate: float, dropatt_rate: float, padding_index: int,
                  pre_lnorm: bool = False, same_lengths: bool = False, pos_enc: str = 'absolute', shared_embedding=False,
                  tie_embedding=False, **kwargs):
-        super(EncoderDecoderModel, self).__init__()
+        super(EncoderDecoderBase, self).__init__()
         self.tie_embedding = tie_embedding
         self.shared_embedding = shared_embedding
         self.padding_index = padding_index
@@ -232,11 +239,37 @@ class EncoderDecoderModel(nn.Module):
         self.seq_len = seq_len
         self.head_dim = head_dim
         self.dec_num_layers = dec_num_layers
+        self.enc_num_layers = enc_num_layers
         self.dropout_rate = dropout_rate
         self.dropatt_rate = dropatt_rate
         self.pre_lnorm = pre_lnorm
         self.same_lengths = same_lengths
         self.pos_enc = pos_enc
+
+    def keyword_dict(self):
+        kwargs_dict = {'vocab_size': self.vocab_size, 'seq_len': self.seq_len, 'padding_index': self.padding_index}
+        if self.shared_embedding and hasattr(self, 'encoder'):
+            kwargs_dict['embedding'] = self.encoder.embedding
+        elif self.shared_embedding and hasattr(self, 'shared_encoders'):
+            kwargs_dict['embedding'] = self.shared_encoders.embedding
+        return kwargs_dict
+
+    def build_decoder_network(self, block_type=DecoderBlock):
+        return DecoderNetwork(self.hidden_dim, self.projection_dim, self.n_heads, self.head_dim, self.dec_num_layers,
+                              self.dropout_rate, self.dropatt_rate, self.pre_lnorm, self.same_lengths,
+                              self.pos_enc, decoder_block=block_type, **self.keyword_dict())
+
+
+class EncoderDecoderModel(EncoderDecoderBase):
+    def __init__(self, vocab_size: int, seq_len: int, hidden_dim: int, projection_dim: int, n_heads: int, head_dim: int,
+                 enc_num_layers: int, dec_num_layers: int, dropout_rate: float, dropatt_rate: float, padding_index: int,
+                 pre_lnorm: bool = False, same_lengths: bool = False, pos_enc: str = 'absolute', shared_embedding=False,
+                 tie_embedding=False, **kwargs):
+        super(EncoderDecoderModel, self).__init__(vocab_size, seq_len, hidden_dim, projection_dim, n_heads, head_dim,
+                                                  enc_num_layers, dec_num_layers, dropout_rate, dropatt_rate,
+                                                  padding_index,
+                                                  pre_lnorm, same_lengths, pos_enc, shared_embedding, tie_embedding,
+                                                  **kwargs)
         self.encoder = EncoderNetwork(hidden_dim, projection_dim, n_heads, head_dim, enc_num_layers, dropout_rate,
                                       dropatt_rate, pre_lnorm, same_lengths, pos_enc,
                                       **self.keyword_dict())
@@ -247,18 +280,6 @@ class EncoderDecoderModel(nn.Module):
 
         else:
             self.final = nn.Linear(hidden_dim, vocab_size, bias=False)  # To-Do : implement tie embedding
-
-    def keyword_dict(self):
-        kwargs_dict = {'vocab_size': self.vocab_size, 'seq_len': self.seq_len, 'padding_index': self.padding_index}
-        if self.shared_embedding and hasattr(self, 'encoder'):
-            kwargs_dict['embedding'] = self.encoder.embedding
-        return kwargs_dict
-
-    def build_decoder_network(self, block_type=DecoderBlock):
-
-        return DecoderNetwork(self.hidden_dim, self.projection_dim, self.n_heads, self.head_dim, self.dec_num_layers,
-                              self.dropout_rate, self.dropatt_rate, self.pre_lnorm, self.same_lengths,
-                              self.pos_enc, decoder_block=block_type, **self.keyword_dict())
 
     def encode_src(self, inp):
         src, src_len = inp['src'], inp['src_len']
@@ -376,6 +397,77 @@ class CrossLingualModel(nn.Module):
         out['tgt_mem'] = z_tgt_mem
         out['dec_self_att'] = dec_self_att
         out['inter_att'] = inter_att
+        return out
+
+
+class LanguageSpecificMT(EncoderDecoderBase):
+    def __init__(self, vocab_size: int, seq_len: int, hidden_dim: int, projection_dim: int, n_heads: int, head_dim: int,
+                 enc_num_layers: int, dec_num_layers: int, num_src_lang: int, num_tgt_lang: int,
+                 dropout_rate: float, dropatt_rate: float, padding_index: int,
+                 pre_lnorm: bool = False, same_lengths: bool = False, pos_enc: str = 'absolute', shared_embedding=False,
+                 tie_embedding=False, shared_enc_layers=None, shared_dec_layers=None, **kwargs):
+        super(LanguageSpecificMT, self).__init__(vocab_size, seq_len, hidden_dim, projection_dim, n_heads,
+                                                 head_dim, enc_num_layers, dec_num_layers, dropout_rate,
+                                                 dropatt_rate, padding_index, pre_lnorm, same_lengths,
+                                                 pos_enc, shared_embedding, tie_embedding, **kwargs)
+        self.shared_enc_layers = shared_enc_layers if shared_enc_layers else enc_num_layers // 3 * 2
+        self.shared_dec_layers = shared_dec_layers if shared_dec_layers else dec_num_layers // 3 * 2
+        self.specific_enc_layers = enc_num_layers - self.shared_enc_layers
+        self.specific_dec_layers = dec_num_layers - self.shared_dec_layers
+        self.num_src_lang = num_src_lang
+        self.num_tgt_lang = num_tgt_lang
+        self.shared_encoders = EncoderNetwork(hidden_dim, projection_dim, n_heads, head_dim, self.shared_enc_layers,
+                                              dropout_rate, dropatt_rate, pre_lnorm, same_lengths, pos_enc,
+                                              **self.keyword_dict())
+        self.shared_decoders = DecoderNetwork(hidden_dim, projection_dim, n_heads, head_dim, self.shared_dec_layers,
+                                              dropout_rate, dropatt_rate, pre_lnorm, same_lengths, pos_enc,
+                                              **self.keyword_dict())
+
+        self.language_wise_encoders = nn.ModuleList([
+            EncoderNetwork(hidden_dim, projection_dim, n_heads, head_dim, self.specific_enc_layers,
+                           dropout_rate, dropatt_rate, pre_lnorm, same_lengths, pos_enc, False)
+            for _ in range(num_src_lang)])
+
+        self.language_wise_decoders = nn.ModuleList([
+            DecoderNetwork(hidden_dim, projection_dim, n_heads, head_dim, self.specific_dec_layers,
+                           dropout_rate, dropatt_rate, pre_lnorm, same_lengths, pos_enc, False)
+            for _ in range(num_tgt_lang)])
+        self.final = nn.Linear(hidden_dim, vocab_size)
+
+    def encode_src(self, inp):
+        src, src_len, src_lang = inp['src'], inp['src_len'], inp['src_lang']
+        src_lang = src_lang[0]  # brute-force implementation
+        src_mask = self.shared_encoders.get_mask(None, src_len)
+        enc_out, _, enc_self_atts = self.shared_encoders(src, None, src_mask)
+        enc_out, _, enc_self_atts2 = self.language_wise_encoders[src_lang](enc_out, None, src_mask)
+        inp['enc_out'] = enc_out
+        inp['enc_self_att'] = enc_self_atts + enc_self_atts2
+        return enc_out
+
+    def forward(self, inp):
+        src, tgt, src_len, tgt_len, tgt_lang, = \
+            inp['src'], inp['tgt'], inp['src_len'], inp['tgt_len'], inp['tgt_lang']
+
+        tgt_lang = tgt_lang[0]  # brute-force implementation
+        enc_out = inp['enc_out'] if 'enc_out' in inp else None  # if src is already encoded. used in decoding phase
+        tgt_mem = inp['tgt_mem'] if 'tgt_mem' in inp else None
+        tgt_mem_shared = tgt_mem[:self.shared_dec_layers] if tgt_mem else None
+        tgt_mem_specific = tgt_mem[self.shared_dec_layers:] if tgt_mem else None
+        out = {}
+        if enc_out is None:
+            enc_out = self.encode_src(inp)
+        tgt_mask = self.shared_decoders.get_mask(tgt_mem, tgt_len)
+        tgt_to_src_mask = self.shared_decoders.tgt_to_src_mask(src_len, tgt_len)
+        dec_out, new_tgt_mem, dec_self_att, inter_att = self.shared_decoders(
+            enc_out, tgt, tgt_mem_shared, tgt_mask, tgt_to_src_mask)
+        dec_out, new_tgt_mem2, dec_self_att2, inter_att2 = self.language_wise_decoders[tgt_lang](
+            enc_out, dec_out, tgt_mem_specific, tgt_mask, tgt_to_src_mask)
+
+        logits = self.final(dec_out)
+        out['logits'] = logits
+        out['tgt_mem'] = new_tgt_mem + new_tgt_mem2
+        out['dec_self_att'] = dec_self_att + dec_self_att2
+        out['inter_att'] = inter_att + inter_att2
         return out
 
 

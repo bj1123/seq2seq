@@ -66,19 +66,24 @@ class Word_Embedding(nn.Module):
 
 
 class StructuredEmbedding(nn.Module):
-    def __init__(self, vocab_size:int, embedding_dim:int, n_cluster=None, entry_per_cluster=None):
+    def __init__(self, vocab_size:int, embedding_dim:int, n_cluster=None, entry_per_cluster=None, base_embedding=50):
         super(StructuredEmbedding, self).__init__()
         self.vocab_size = vocab_size
         self.embedding_size = embedding_dim
         self.n_cluster = n_cluster if n_cluster else 5
         self.entry_per_cluster = entry_per_cluster if entry_per_cluster else 1000 // self.n_cluster
         self.cluster_weights = nn.Embedding(vocab_size, self.n_cluster)
-        self.base_weights = nn.Embedding(vocab_size, self.n_cluster * self.entry_per_cluster // 5)
+        self.base_weights = nn.Embedding(vocab_size, base_embedding)
         self.base_embeddings = nn.ParameterList([nn.Parameter(torch.Tensor(self.entry_per_cluster, embedding_dim))
                                                  for _ in range(self.n_cluster)])
         for i in self.base_embeddings:
             torch.nn.init.normal_(i, std=0.02)
-        self.proj = nn.Linear(self.n_cluster * self.entry_per_cluster // 5, self.n_cluster * self.entry_per_cluster)
+        self.proj = nn.Sequential(
+            nn.Linear(base_embedding, self.n_cluster * self.entry_per_cluster), nn.ReLU(),
+            nn.Linear(self.n_cluster * self.entry_per_cluster, self.n_cluster * self.entry_per_cluster)
+        )
+        self.ln = nn.LayerNorm(embedding_dim)
+        self.scale = nn.Parameter(torch.Tensor([0.02]))
 
     def forward(self, x):
         cluster_weights = self.cluster_weights(x)  # [bs, l, n_clusters]
@@ -91,7 +96,7 @@ class StructuredEmbedding(nn.Module):
         tgt_embs = torch.stack(tgt_embs, 2)  # [bs, l, n_clusters, emb]
         emb = torch.matmul(cluster_weights.unsqueeze(2), tgt_embs)
         emb = emb.squeeze(2)
-        return emb
+        return self.ln(emb) * self.scale
 
 
 class AdaptiveEmbedding(nn.Module):
@@ -112,7 +117,6 @@ class AdaptiveEmbedding(nn.Module):
                                          else nn.Embedding(self.cutoffs[i+1]-self.cutoffs[i] + 1,
                                                            self.embedding_dims[i],self.cutoffs[i+1]-self.cutoffs[i])# for UNK
                                          for i in range(self.n_cluster)])
-        print(self.embeddings)
         self.proj = nn.ModuleList([nn.Linear(i,projection_dim) for i in self.embedding_dims])
 
     def compute_cutoffs(self):
@@ -159,6 +163,24 @@ class PositionEmbedding(nn.Module):
         return pos_emb
 
 
+class HybridEmbedding(nn.Module):
+    def __init__(self, vocab_size: int, embedding_dim: int, padding_index: int, dropout_rate:float):
+        super(HybridEmbedding, self).__init__()
+        self.unique_embedding = AdaptiveEmbedding(vocab_size, embedding_dim, embedding_dim)
+        self.shared_embedding = StructuredEmbedding(vocab_size, embedding_dim)
+        self.ratio = nn.Embedding(vocab_size,1)
+        self.unique_ln = nn.LayerNorm(embedding_dim)
+        self.shared_ln = nn.LayerNorm(embedding_dim)
+        self.scale = nn.Parameter(torch.Tensor([0.02]))
+
+    def forward(self, x):
+        u = self.unique_ln(self.unique_embedding(x))
+        s = self.shared_ln(self.shared_embedding(x))
+        r = torch.sigmoid(self.ratio(x))
+        res = r * u + (1-r * s)
+        return res * self.scale
+
+
 class TransformerEmbedding(nn.Module):
     def __init__(self, vocab_size: int, embedding_dim: int, padding_index: int,
                  max_seqlen: int, dropout_rate: float = 0.1, use_pos_emb: bool = True):
@@ -169,12 +191,14 @@ class TransformerEmbedding(nn.Module):
         self.use_pos_emb = use_pos_emb
         self.seq_len = max_seqlen
 
+        # self.word_embedding = HybridEmbedding(vocab_size, embedding_dim, padding_index, dropout_rate)
         # self.word_embedding = StructuredEmbedding(vocab_size, embedding_dim)
         # self.word_embedding = AdaptiveEmbedding(vocab_size, embedding_dim, embedding_dim)
         # self.word_embedding = OneEmbed(vocab_size, embedding_dim, padding_index,
         #                                one_emb_type='real', dropout=dropout_rate)
         # self.word_embedding = HashEmbedding(vocab_size, embedding_dim, padding_index)
         self.word_embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=padding_index)
+        # self.pos_ln = nn.LayerNorm(embedding_dim)
         if self.use_pos_emb:
             self.posisition_embedding = nn.Embedding(max_seqlen, embedding_dim)
         self.dropout = nn.Dropout(dropout_rate)
@@ -195,8 +219,8 @@ class TransformerEmbedding(nn.Module):
 
 class OneEmbed(nn.Module):
     def __init__(self, num_embeddings, embedding_dim, padding_idx,
-                 one_emb_type='binary', dropout=0.5, std=0.0675, codenum=64, codebooknum=8,
-                 layernum=1, binary_dropout=0.1):
+                 one_emb_type='binary', dropout=0.1, std=0.0675, codenum=64, codebooknum=8,
+                 layernum=1, binary_dropout=0.5):
         super(OneEmbed, self).__init__()
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
