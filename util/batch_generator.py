@@ -225,7 +225,7 @@ class TorchTextMTMulti(TorchTextMTBase):
 
 class TorchTextMTMultiTask(TorchTextMTBase):
     def __init__(self, file_path, batch_size, example_path, padding_index, maxlen=512, batch_criteria='token',
-                 epoch_shuffle=True, sampling_mode=False, target_lang=None, over_sampling=True,
+                 epoch_shuffle=True, sampling_mode=False, target_lang=None, over_sampling=False,
                  device='cuda', **kwargs):
         super(TorchTextMTMultiTask, self).__init__(batch_size, padding_index, maxlen, batch_criteria, epoch_shuffle,
                                                    sampling_mode, device, **kwargs)
@@ -301,13 +301,16 @@ class TorchTextMTMultiTask(TorchTextMTBase):
     def iterator(self):
         [i.create_batches() for i in self.ds]
         iterators = [iter(i) for i in self.ds]
-        finished = []
+        finished = set()
         while len(finished) < len(iterators):
-            idx = [i for i in range(len(iterators))]
             if self.over_sampling:
+                idx = [i for i in range(len(iterators))]
                 shuffled = np.random.choice(idx, size=len(iterators), replace=False)
             else:
-                shuffled = np.random.choice(idx, size=len(iterators), replace=True, p=self.probs)
+                idx = [i for i in range(len(iterators)) if i not in finished]
+                logits = [self.probs[i] for i in idx]
+                probs = [i/sum(logits) for i in logits]
+                shuffled = np.random.choice(idx, size=len(iterators), replace=True, p=probs)
             for i in shuffled:
                 try:
                     res = next(iterators[i])
@@ -316,7 +319,7 @@ class TorchTextMTMultiTask(TorchTextMTBase):
                     if self.over_sampling:
                         self.ds[i].create_batches()
                         iterators[i] = iter(self.ds[i])
-                    finished.append(i)
+                    finished.add(i)
 
 
 class BaseBatchfier(IterableDataset):

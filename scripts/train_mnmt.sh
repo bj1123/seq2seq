@@ -3,7 +3,7 @@ export PYTHONPATH="${PYTHONPATH}:../"
 echo $PYTHONPATH
 #!
 DATASET=un_pc
-MODEL=plain
+MODEL=language-specific
 PENCODING=absolute
 
 CUDA_VISIBLE_DEVICES=0 python main.py \

@@ -33,17 +33,13 @@ class AttBase(nn.Module, ABC):
         # score.masked_fill_(encoder_mask.unsqueeze(1), -6e4)
         return score
 
-    def attend(self, query, key, value, mask, **kwargs):
-        bs, qs = query.size()[:2]
-        score = self.compute_score(query, key, **kwargs)
+    def attend(self, query, key, value, mask, *args):
+        score = self.compute_score(query, key, *args)
         score = self.mask(score, mask)
         attended = self.linear_combine(score, value)
+        return attended.contiguous(), score
 
-        out = self.o_net(attended.contiguous().view(bs, qs, -1))
-        out = self.dropout(out)
-        return out, score
-
-    def compute_score(self, query, key, **kwargs):
+    def compute_score(self, query, key, *args):
         bs, qs, hs = query.size()
         ks = key.size(1)
 
@@ -70,28 +66,24 @@ class AttBase(nn.Module, ABC):
         # attended = torch.matmul(att_prob, v).transpose(1,2)  # b n q k , b n k d
         return attended
 
-    def projection(self, q, kv, mem):
+    def projection(self, q, kv, mem, *args):
         kv = self.kv_net(kv)
         c = torch.cat([mem,kv],1)
         key, value = c.chunk(2,-1)
         query = self.q_net(q)
         return kv, query, key, value
 
-    def before_add(self, q, kv, mem, mask):
+    def before_add(self, q, kv, mem, mask, *args):
         if kv is None:
             return q, None
         if mem is None:
             mem = torch.Tensor().to(device=kv.device, dtype=kv.dtype)
-            ml = 0
-        else:
-            ml = mem.size(1)
-
         if self.pre_lnorm:
             kv = self.layer_norm(kv)
             q = self.layer_norm(q)
 
-        kv, query, key, value = self.projection(q, kv, mem)
-        out, att_prob = self.attend(query, key, value, mask, memory_length=ml)
+        kv, query, key, value = self.projection(q, kv, mem, *args)
+        out, att_prob = self.attend(query, key, value, mask)
         return query, out, kv, att_prob
 
 
@@ -100,8 +92,11 @@ class MultiheadAtt(AttBase):
                  dropout_rate:float, dropatt_rate:float=0.0, pre_lnorm=False, **kwargs):
         super(MultiheadAtt, self).__init__(hidden_dim, n_head, head_dim, dropout_rate, dropatt_rate, pre_lnorm)
 
-    def forward(self, q, kv, mem, mask, **kwargs):
-        query, out, kv, att_prob = self.before_add(q, kv, mem, mask)
+    def forward(self, q, kv, mem, mask, *args):
+        bs, qs = q.size()[:2]
+        query, out, kv, att_prob = self.before_add(q, kv, mem, mask, *args)
+        out = self.o_net(out.contiguous().view(bs, qs, -1))
+        out = self.dropout(out)
         out = out + query
         if not self.pre_lnorm:
             out = self.layer_norm(out)
@@ -109,7 +104,45 @@ class MultiheadAtt(AttBase):
 
 
 class LanguageWiseAttention(AttBase):
-    pass  # to implement: def projection
+    def __init__(self, hidden_dim: int, n_head: int, head_dim: int,
+                 dropout_rate: float, dropatt_rate: float = 0.0, pre_lnorm=False,
+                 **kwargs):
+        super(LanguageWiseAttention, self).__init__(hidden_dim, n_head, head_dim, dropout_rate, dropatt_rate, pre_lnorm)
+        num_src_lang = kwargs.get('num_src_lang', None)
+        num_tgt_lang = kwargs.get('num_tgt_lang', None)
+        self.kv_net = nn.ModuleList([nn.Linear(hidden_dim, 2 * n_head * head_dim, bias=False)
+                                     for _ in range(num_tgt_lang)])
+        self.q_net = nn.ModuleList([nn.Linear(hidden_dim, n_head * head_dim, bias=False)
+                                    for _ in range(num_src_lang)])
+
+        self.dropout = nn.Dropout(dropout_rate)
+        self.dropatt = nn.Dropout(dropatt_rate)
+        self.o_net = nn.ModuleList([nn.Linear(n_head * head_dim, hidden_dim, bias=False)
+                                    for _ in range(num_src_lang)])
+
+    @staticmethod
+    def get_lang(*args):
+        assert len(args) ==2
+        return args[0], args[1]
+
+    def projection(self, q, kv, mem, *args):
+        src_lang, tgt_lang = self.get_lang(*args)
+        kv = self.kv_net[tgt_lang](kv)
+        c = torch.cat([mem,kv],1)
+        key, value = c.chunk(2,-1)
+        query = self.q_net[src_lang](q)
+        return kv, query, key, value
+
+    def forward(self, q, kv, mem, mask, *args):
+        bs, qs = q.size()[:2]
+        src_lang, _ = self.get_lang(*args)
+        query, out, kv, att_prob = self.before_add(q, kv, mem, mask, *args)
+        out = self.o_net[src_lang](out.contiguous().view(bs, qs, -1))
+        out = self.dropout(out)
+        out = out + query
+        if not self.pre_lnorm:
+            out = self.layer_norm(out)
+        return out, kv, att_prob
 
 
 class SentenceAwareAtt(MultiheadAtt):
@@ -190,6 +223,25 @@ class RelMultiheadAtt(AttBase):
         ml = kwargs.get('memory_length')
         position_bias = self.compute_bias(ql, kl, ml)
         return score * (self.head_dim ** 0.5) + position_bias
+
+
+    def before_add(self, q, kv, mem, mask, *args):
+        if kv is None:
+            return q, None
+        if mem is None:
+            mem = torch.Tensor().to(device=kv.device, dtype=kv.dtype)
+            ml = 0
+        else:
+            ml = mem.size(1)
+
+        if self.pre_lnorm:
+            kv = self.layer_norm(kv)
+            q = self.layer_norm(q)
+
+        kv, query, key, value = self.projection(q, kv, mem, *args)
+        out, att_prob = self.attend(query, key, value, mask, memory_length=ml)
+        return query, out, kv, att_prob
+
 
     def forward(self, q, kv, mem, mask):
         query, out, kv, att_prob = self.before_add(q, kv, mem, mask)
