@@ -504,6 +504,24 @@ class MTBatchfier(BaseBatchfier):
                 'label': tgt_texts[:, 1:].to(self.device)}
 
 
+class LanguageSpecificMTBatchfier(BaseBatchfier):
+    def __init__(self, src_filepaths, tgt_filepaths, batch_size: int = 32, seq_len=512, minlen=50, maxlen=4096,
+                 criteria: str = 'tgt_lens', padding_index=30000, epoch_shuffle=True,
+                 sampling_mode=False, device='cuda'):
+        super(LanguageSpecificMTBatchfier, self).__init__(batch_size, seq_len, minlen, maxlen, criteria, padding_index,
+                                          epoch_shuffle, device)
+        self.fl = (src_filepaths, tgt_filepaths)
+        self.dfs, self.tot_len, self.eos_idx = self.initialize()
+        self.sampling_mode = sampling_mode
+
+    def get_language_dict(self):
+        pass
+
+    def read_file(self, src, tgt):
+        df = super().read_file()
+        pass
+
+
 #
 # class MTBatchfier(BaseBatchfier):
 #     def __init__(self, src_filepaths, tgt_filepaths, batch_size: int = 32, seq_len=512, minlen=50,
