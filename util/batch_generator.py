@@ -504,24 +504,67 @@ class MTBatchfier(BaseBatchfier):
                 'label': tgt_texts[:, 1:].to(self.device)}
 
 
-class LanguageSpecificMTBatchfier(BaseBatchfier):
+class LanguageSpecificMTBatchfier(MTBatchfier):
     def __init__(self, src_filepaths, tgt_filepaths, batch_size: int = 32, seq_len=512, minlen=50, maxlen=4096,
                  criteria: str = 'tgt_lens', padding_index=30000, epoch_shuffle=True,
                  sampling_mode=False, device='cuda'):
-        super(LanguageSpecificMTBatchfier, self).__init__(batch_size, seq_len, minlen, maxlen, criteria, padding_index,
-                                          epoch_shuffle, device)
-        self.fl = (src_filepaths, tgt_filepaths)
-        self.dfs, self.tot_len, self.eos_idx = self.initialize()
-        self.sampling_mode = sampling_mode
+        super(LanguageSpecificMTBatchfier, self).__init__(src_filepaths, tgt_filepaths, batch_size, seq_len, minlen,
+                                                          maxlen, criteria, padding_index, epoch_shuffle,
+                                                          sampling_mode, device)
 
-    def get_language_dict(self):
-        pass
+    @staticmethod
+    def get_language_indice(src_path, tgt_path):
+        from util.args import MNMTArgument
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(src_path)))
+        paths = MNMTArgument.pair_files(base_dir, target_lang='en')
+        src_dic, tgt_dic = TorchTextMTMultiTask.get_language_indice(paths)
+        src_lang = src_dic[TorchTextMTMultiTask.extract_language(src_path)]
+        tgt_lang = tgt_dic[TorchTextMTMultiTask.extract_language(tgt_path)]
+        return src_lang, tgt_lang
 
     def read_file(self, src, tgt):
-        df = super().read_file()
-        pass
+        df = super().read_file(src, tgt)
+        src_lang, tgt_lang = self.get_language_indice(src, tgt)
+        lang_df = pd.DataFrame({'src_lang': [src_lang for _ in range(len(df))],
+                                'tgt_lang': [tgt_lang for _ in range(len(df))]})
+        return df.join(lang_df)
 
 
+    def __iter__(self):
+        for df in self.dfs:
+            if self.epoch_shuffle:
+                df = self.sort(df)
+            indice = self.batch_indice(df)
+            for l in indice:
+                cur_batch = df.iloc[l:l + self.size]
+                src_texts = cur_batch['src_texts'].tolist()
+                src_lens = cur_batch['src_lens'].tolist()
+                src_lang = cur_batch['src_lang'].tolist()
+                tgt_texts = cur_batch['tgt_texts'].tolist()
+                tgt_lens = cur_batch['tgt_lens'].tolist()
+                tgt_lang = cur_batch['tgt_lang'].tolist()
+                for i in range(len(src_texts)):
+                    if self.sampling_mode:
+                        yield src_texts[i], src_lens[i], tgt_texts[i][:2], 2, src_lang[i], tgt_lang[i]
+                    else:
+                        yield src_texts[i], src_lens[i], tgt_texts[i], tgt_lens[i], src_lang[i], tgt_lang[i]
+
+    def collate_fn(self, batch):
+        src_texts = [torch.Tensor(item[0]).long() for item in batch]
+        src_texts = torch.nn.utils.rnn.pad_sequence(src_texts, batch_first=True, padding_value=self.padding_index)
+        tgt_texts = [torch.Tensor(item[2]).long() for item in batch]
+        tgt_texts = torch.nn.utils.rnn.pad_sequence(tgt_texts, batch_first=True, padding_value=self.padding_index)
+        src_lens = torch.Tensor([item[1] for item in batch]).long()
+        tgt_lens = torch.Tensor([item[3] for item in batch]).long()
+        src_langs = torch.Tensor([item[4] for item in batch]).long()
+        tgt_langs = torch.Tensor([item[5] for item in batch]).long()
+        return {'src': src_texts.to(self.device),
+                'src_len': src_lens.to(self.device),
+                'src_lang': src_langs.to(self.device),
+                'tgt': tgt_texts.to(self.device)[:, :-1],
+                'tgt_len': tgt_lens.to(self.device) - 1,
+                'tgt_lang': tgt_langs.to(self.device),
+                'label': tgt_texts[:, 1:].to(self.device)}
 #
 # class MTBatchfier(BaseBatchfier):
 #     def __init__(self, src_filepaths, tgt_filepaths, batch_size: int = 32, seq_len=512, minlen=50,

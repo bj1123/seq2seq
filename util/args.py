@@ -196,7 +196,8 @@ class MNMTArgument(BaseArgument):
             parser.add_argument('--sample-save-path', type=str)
         return parser
 
-    def pair_files(self, dir_path, target_name='train', target_lang=None):
+    @staticmethod
+    def pair_files(dir_path, target_name='train', target_lang=None):
         dirs = os.listdir(dir_path)
         res = []
         for i in dirs:

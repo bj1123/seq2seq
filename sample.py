@@ -14,13 +14,19 @@ def get_batchfier(args):
     if args.task == 'access':
         test_batchfier = FairTestBatchfier(args.dataset, args.batch_size * 4, device=args.device)
 
-    elif args.task =='seq2seq':
+    elif args.task == 'seq2seq':
         # test_batchfier = TorchTextMT(args.train_src_path, args.train_tgt_path, args.batch_size // args.update_step,
         #                               padding_index=args.padding_index, device=args.device,
         #                               epoch_shuffle=False, sampling_mode=True)
-        test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, 64, maxlen=args.seq_len,
-                                     padding_index=args.padding_index, epoch_shuffle=False,
-                                     device=args.device, sampling_mode=True)
+        if args.model_type in ('language-specific', 'attention-specific'):
+            test_batchfier = LanguageSpecificMTBatchfier(args.test_src_path, args.test_tgt_path, 256,
+                                                         maxlen=args.seq_len,
+                                                         padding_index=args.padding_index, epoch_shuffle=False,
+                                                         device=args.device, sampling_mode=True)
+        else:
+            test_batchfier = MTBatchfier(args.test_src_path, args.test_tgt_path, 256, maxlen=args.seq_len,
+                                         padding_index=args.padding_index, epoch_shuffle=False,
+                                         device=args.device, sampling_mode=True)
     return test_batchfier.to_iterator()
 
 
@@ -35,7 +41,7 @@ def get_sampler(args, model, batchfier):
                                     batchfier.dataset.eos_idx, use_cache=True, length_penalty=args.lengths_penalty)
     elif args.model_type == 'sentence-aware':
         trainer = SentenceAwareSampler(model, args.sampling_mode, 200, args.temperature, args.width,
-                                    batchfier.dataset.eos_idx, use_cache=True, length_penalty=args.lengths_penalty)
+                                       batchfier.dataset.eos_idx, use_cache=True, length_penalty=args.lengths_penalty)
     else:
         trainer = Sampler(model, args.sampling_mode, 200, args.temperature, args.width, batchfier.dataset.eos_idx,
                           use_cache=True, length_penalty=args.lengths_penalty)
@@ -57,14 +63,14 @@ if __name__ == '__main__':
     cnt = 0
     t = time.time()
     for inp in batchfier:
-        cnt +=1
+        cnt += 1
         res.extend(sampler.sample(inp))
-        print(cnt, time.time()-t)
+        print(cnt, time.time() - t)
         t = time.time()
     if not os.path.exists(os.path.dirname(args.sample_save_path)):
         os.makedirs(os.path.dirname(args.sample_save_path))
     # f = open(args.sample_save_path, 'w')
     # txts = [' '.join(map(str, i[:-1])) + ' \n' for i in res]
     # f.writelines(txts)
-    data = list(map(lambda x: x[1:-1],res)) if 'multi' in args.src_path else list(map(lambda x: x[:-1],res))
-    json.dump(data, open(args.sample_save_path,'w'))
+    data = list(map(lambda x: x[1:-1], res)) if 'multi' in args.src_path else list(map(lambda x: x[:-1], res))
+    json.dump(data, open(args.sample_save_path, 'w'))
