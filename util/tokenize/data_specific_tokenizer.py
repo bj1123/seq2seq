@@ -15,7 +15,7 @@ class MTSpaceTokenizer(SpaceTokenizer):
         res = self._read_file(inp, **kwargs)
         encoded = [self.encode(i) for i in res]
         df = pd.DataFrame({'texts': encoded})
-        df.to_pickle(out)
+        self._save_df(df, out)
 
 
 class WikiLargeTokenizer(HFTokenizer):
@@ -38,12 +38,13 @@ class WikiLargeTokenizer(HFTokenizer):
 
     def _encode_file(self, inp, out, **kwargs):
         res = self._read_file(inp, **kwargs)
-        encoded = [self.tokenizer.encode(i.rstrip()).ids for i in res]
+        # encoded = [self.tokenizer.encode(i.rstrip()).ids for i in res]
+        encoded = [self.tokenizer.encode(self.morph_analyzer.to_morphs(i.rstrip())).ids for i in res]
         df = pd.DataFrame({'texts': encoded})
-        return df
+        self._save_df(df, out)
 
 
-class MultiTaskTokenizer(HFTokenizer):
+class MultiTaskTokenizer(HFTokenizer):  # for un-corpus
     def __init__(self, directory_path, prefix, vocab_size=30000, tokenizer_class='wp',
                  morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser, tokens_to_add=None,
                  use_imap=True, split_jamo=False, use_control_token=True, **kwargs):
@@ -208,7 +209,7 @@ class UNTokenizer(HFTokenizer):
         df = pd.read_feather(file_path)
         res = []
         for i in df.keys():
-            texts = [j+' \n' for j in df[i].tolist()]
+            texts = [j + ' \n' for j in df[i].tolist()]
             res.extend(texts)
         return res
 
@@ -229,8 +230,8 @@ class UNTokenizer(HFTokenizer):
 
         src_df = pd.DataFrame({'texts': encoded[0]})
         tgt_df = pd.DataFrame({'texts': encoded[1]})
-        src_path = os.path.join(os.path.dirname(out), langs_str[0],os.path.basename(out))
-        tgt_path = os.path.join(os.path.dirname(out), langs_str[1],os.path.basename(out))
+        src_path = os.path.join(os.path.dirname(out), langs_str[0], os.path.basename(out))
+        tgt_path = os.path.join(os.path.dirname(out), langs_str[1], os.path.basename(out))
         self._save_df(src_df, src_path)
         self._save_df(tgt_df, tgt_path)
 
@@ -248,3 +249,75 @@ class UNTokenizer(HFTokenizer):
     def corpus_encode(self, inp_path, **kwargs):
         new_kwargs = dict(kwargs, filter_words=self.target_lang)
         super().corpus_encode(inp_path, **new_kwargs)
+
+
+class MultilingualTokenizer(HFTokenizer):
+    def __init__(self, directory_path, prefix, vocab_size=30000, tokenizer_class='wp',
+                 cleanser_class=NullCleanser, tokens_to_add=None,
+                 use_imap=True, split_jamo=False, target_lang=None, **kwargs):
+        kwargs.pop('morph_analyzer_class', None)
+        super(MultilingualTokenizer, self).__init__(directory_path, prefix, vocab_size,
+                                                    tokenizer_class=tokenizer_class,
+                                                    morph_analyzer_class=MultilingualAnalyzer,
+                                                    cleanser_class=cleanser_class,
+                                                    tokens_to_add=tokens_to_add,
+                                                    use_imap=use_imap,
+                                                    split_jamo=split_jamo,
+                                                    **kwargs)
+        self.target_lang = target_lang
+
+    @staticmethod
+    def language_token(token):
+        return f'[{token.upper()}]'
+
+    @staticmethod
+    def get_language(filepath):
+        return os.path.basename(os.path.dirname(filepath))
+
+    @staticmethod
+    def get_languages_set(file_path):
+        s = set()
+        files = get_files(file_path)
+        for file in files:
+            lang = MultilingualTokenizer.get_language(file)
+            s.add(MultilingualTokenizer.language_token(lang))
+        return s
+
+    def _write_one(self, inp, out, **kwargs):
+        lang = self.get_language(inp)
+        super()._write_one(inp, out, lang=lang)
+
+    def _read_file(self, file_path, **kwargs):
+        lang = self.get_language(file_path)
+        with open(file_path, 'r', encoding='utf-8') as f:
+            res = f.readlines()
+        if lang == 'en':
+            res = [i for idx, i in enumerate(res) if idx % 3.5 >= 1]  # hard-coded should be modified
+        return res
+
+    def _encode_file(self, inp, out, **kwargs):
+        with open(inp, 'r', encoding='utf-8') as f:
+            res = f.readlines()
+        lang = self.get_language(inp)
+        lang_tok = [self.tokenizer.token_to_id(self.language_token(lang))]
+        pre_prossed = [self.morph_analyzer.to_morphs(i.rstrip(), lang=lang) for i in res]
+        batch_encoded = self.tokenizer.encode_batch(pre_prossed)
+        encoded = [lang_tok + i.ids for i in batch_encoded]
+
+        df = pd.DataFrame({'texts': encoded})
+        self._save_df(df, out)
+
+    def _learn_tokenizer(self, file_path, **kwargs):
+        self.control_tokens = self.get_languages_set(file_path)
+        if self.tokens_to_add is None:
+            self.tokens_to_add = list(self.control_tokens)
+        else:
+            self.tokens_to_add += list(self.control_tokens)
+        new_kwargs = dict(kwargs, filter_words=self.target_lang)
+        enc = super()._learn_tokenizer(file_path, **new_kwargs)
+        return enc
+
+    def corpus_encode(self, inp_path, **kwargs):
+        new_kwargs = dict(kwargs, filter_words=self.target_lang)
+        super().corpus_encode(inp_path, **new_kwargs)
+

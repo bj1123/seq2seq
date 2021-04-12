@@ -9,7 +9,8 @@ TOKENIZER_CLASS_MAP = {'sentencepiecebpe': 'bpe',
                        'WP': 'wp',
                        }
 TOKENIZER_MAP = {'mtspace': MTSpaceTokenizer, 'multitask': MultiTaskTokenizer,
-                 'wikilarge': WikiLargeTokenizer, 'un_pc':UNTokenizer}
+                 'wikilarge': WikiLargeTokenizer, 'un_pc':UNTokenizer,
+                 'multilingual': MultilingualTokenizer}
 REFORMATTER_MAP = {'multitask': MultitaskReformatter, 'wikilarge': DSReformatter}
 
 

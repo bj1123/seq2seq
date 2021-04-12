@@ -66,13 +66,11 @@ class IMap:
         vocab_size = self.vocab_size
         cnter = collections.Counter()
         s = set()
-        fl = self._get_files(path, filter_train=True)
-        print(fl)
-        checks = self.get_columns(fl[0])
+        checks = self.get_columns(path[0])
         if not self.target_names:
             self.target_names = checks
         targets = self.target_names
-        for filename in fl:
+        for filename in path:
             cur_df = maybe_read(filename)
             for target in targets:
                 texts = cur_df[target].tolist()
@@ -130,18 +128,16 @@ class IMap:
             self.target_names = self.get_columns(self._get_files(filepath))
         targets = self.target_names
 
-        fl = self._get_files(filepath)
-        if os.path.isdir(filepath):
-            for filename in fl:
-                cur_df = _convert_file(filename, self.dic)
-                new_filename = re.sub(os.path.join('encoded',''), os.path.join('encoded_mapped',''), filename)
-                if not os.path.exists(os.path.dirname(new_filename)):
-                    os.makedirs(os.path.dirname(new_filename))
-                cur_df.to_feather(new_filename)
-        else:
-            cur_df = _convert_file(fl[0], self.dic)
-            new_path = os.path.splitext(fl[0])[0] + '_mapped.pkl'
-            cur_df.to_feather(new_path)
+        for filename in filepath:
+            cur_df = _convert_file(filename, self.dic)
+            new_filename = re.sub(os.path.join('encoded',''), os.path.join('encoded_mapped',''), filename)
+            if not os.path.exists(os.path.dirname(new_filename)):
+                os.makedirs(os.path.dirname(new_filename))
+            cur_df.to_feather(new_filename)
+        # else:
+        #     cur_df = _convert_file(filepath[0], self.dic)
+        #     new_path = os.path.splitext(filepath[0])[0] + '_mapped.pkl'
+        #     cur_df.to_feather(new_path)
 
     def convert_line(self, line):
         assert self.dic is not None, 'dictionary must be built first'

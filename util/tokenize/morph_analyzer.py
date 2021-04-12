@@ -18,22 +18,22 @@ class NullAnalyzer:
         pass
 
     @staticmethod
-    def to_morphs(text, *args):
+    def to_morphs(text, **kwargs):
         return text
 
     @staticmethod
-    def to_texts(text, *args):
-        return text
+    def to_texts(text, **kwargs):
+        return text.replace('##','').strip()
 
 
 class MecabAnalyzer:
-    def __init__(self,space_symbol='‐', jamo=False):
+    def __init__(self,space_symbol='ㅬ', jamo=False):
         self.space_symbol = space_symbol
         self.analyzer = Mecab()
         self.space_symbol = space_symbol
         self.jamo = jamo
 
-    def to_morphs(self, text, to_string=False):
+    def to_morphs(self, text, **kwargs):
         text = space_normalize(text)
         try:
             morphs = self.analyzer.morphs(text)
@@ -53,16 +53,11 @@ class MecabAnalyzer:
                     res.append(temp+jamotools.split_syllables(i))
                 else:
                     res.append(temp+i)
-            if to_string:
-                return ' '.join(res)
-            else:
-                return res
-        elif to_string:
-            return ''
+            return ' '.join(res) + ' \n'
         else:
-            return []
+            return '\n'
 
-    def to_texts(self, morph):
+    def to_texts(self, morph, **kwargs):
         if isinstance(morph,str):
             temp = morph.replace('##','').replace(' ','').replace(self.space_symbol,' ').strip()
             if self.jamo:
@@ -75,6 +70,36 @@ class MecabAnalyzer:
                 return jamotools.join_jamos(temp)
             else:
                 return temp
+
+
+class MultilingualAnalyzer:
+    def __init__(self, **kwargs):
+        self.mecab = MecabAnalyzer(**kwargs)
+        self.null = NullAnalyzer(**kwargs)
+
+    @staticmethod
+    def detect_language(text):
+        # to implement
+        return None
+
+    def to_morphs(self, text, **kwargs):
+        lang = kwargs.get('lang', None)
+        if not lang:
+            print('this should not be called')
+            lang = self.detect_language(text)
+        if lang == 'ko':
+            return self.mecab.to_morphs(text, **kwargs)
+        else:
+            return self.null.to_morphs(text)
+
+    def to_texts(self, text, **kwargs):
+        lang = kwargs.pop('lang', None)
+        if not lang:
+            lang = self.detect_language(text)
+        if lang == 'ko':
+            return self.mecab.to_texts(text)
+        else:
+            return self.null.to_texts(text)
 
 
 class Khaiii_Tokenizer:

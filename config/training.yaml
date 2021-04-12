@@ -14,5 +14,5 @@ learning_rate: 0.00021
 weight_decay: 0.0001
 label_smoothing: 0.1
 decay_on_valid: True
-shared_embedding: True
+shared_embedding: False
 tie_embedding: False

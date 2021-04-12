@@ -12,6 +12,7 @@ import shutil
 import random
 from util.files import maybe_read
 
+
 class BaseTokenizer(ABC):
     def __init__(self, dir_path, prefix, vocab_size=10000, use_imap=False, **kwargs):
         self.tokenizer, self.is_trained = self._load_tokenizer(dir_path, prefix)
@@ -28,6 +29,7 @@ class BaseTokenizer(ABC):
         elif os.path.isdir(path):
             # check whether the files are split into test, val set
             temp = get_files(path)
+            temp = list(filter(lambda x: 'vocab.txt' not in x, temp))
             if filter_words:
                 temp = list(filter(lambda x: filter_words in os.path.relpath(x, path), temp))
             # temp = list(filter(lambda x: '/raw' not in os.path.dirname(x), temp))
@@ -76,22 +78,30 @@ class BaseTokenizer(ABC):
             df.to_feather(out)
 
     def corpus_encode(self, inp_path, **kwargs):
+        def output_path(path):
+            if input_isdir:
+                rel_path = os.path.relpath(path, inp_path)
+                out = os.path.join(self.directory_path, inp_rel_path, 'encoded', rel_path)
+                if os.path.splitext(out) != '.feather':
+                    out += '.feather'
+            else:
+                out = os.path.join(self.directory_path, os.path.splitext(inp_path)[0] + '_encoded.pkl')  # deprecated
+            return out
+
         if not self.is_trained:
             enc = self._learn_tokenizer(inp_path, **kwargs)
             self._save_tokenizer(enc)
             self.tokenizer, self.is_trained = self._load_tokenizer(self.directory_path, self.encoder_filename)
 
         procs = []
-        fl = self._get_files(inp_path, **kwargs)
+
         input_isdir = os.path.isdir(inp_path)
+        common_prefix = os.path.commonprefix([inp_path, self.directory_path])
+        inp_rel_path = os.path.relpath(inp_path, common_prefix)
+        fl = self._get_files(inp_path, **kwargs)
+        outs = [output_path(i) for i in fl]
 
-        for index, inp in enumerate(fl):
-            if input_isdir:
-                rel_path = os.path.relpath(inp, inp_path)
-                out = os.path.join(self.directory_path, 'encoded', rel_path)
-            else:
-                out = os.path.join(self.directory_path, os.path.splitext(inp_path)[0] + '_encoded.pkl')  # deprecated
-
+        for index, (inp, out) in enumerate(zip(fl, outs)):
             self._encode_file(inp, out, **kwargs)
             # proc = Process(target=self._encode_file, args=(inp, out))
         #     procs.append(proc)
@@ -100,8 +110,8 @@ class BaseTokenizer(ABC):
         #     proc.join()
 
         if self.imap is not None:
-            self.imap.learn_dic(self.directory_path)
-            self.imap.convert_corpus(self.directory_path)
+            self.imap.learn_dic(outs)
+            self.imap.convert_corpus(outs)
 
 
 class SpaceTokenizer(BaseTokenizer, ABC):
@@ -178,9 +188,9 @@ class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
         if split_jamo:
             assert tokenizer_class.lower() == 'wp', \
                 'Ja-mo level tokenization is only compatible with BertWordPieceTokenizer'
-            self.space_symbol = '쀍'
+            self.space_symbol = 'ㅬ'
         else:
-            self.space_symbol = '‐'
+            self.space_symbol = 'ㅬ'
         self.morph_analyzer = morph_analyzer_class(space_symbol=self.space_symbol, jamo=split_jamo)
         self.cleanser = cleanser_class()
         self.imap = IMap(dir_path, prefix, vocab_size, tokens_to_add) if use_imap else None
@@ -231,16 +241,17 @@ class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
             tokenizer.model = self.tokenizer_map[self.tokenizer_class].from_file(*inp, unk_token='[UNK]')
         return tokenizer, is_exists
 
-    def _write_to_txt(self, inp_path, out_path, **kwargs):
-        def write_one(inp, out):
-            if os.path.exists(out):
-                return
-            tokenized_texts = self._read_file(inp, **kwargs)
-            if isinstance(tokenized_texts[0], list):
-                tokenized_texts = [' '.join(i) for i in tokenized_texts]
-            with open(out, 'w', encoding='utf8') as f:
-                f.writelines(tokenized_texts)
+    def _write_one(self, inp, out, **kwargs):
+        if os.path.exists(out):
+            return
+        tokenized_texts = self._read_file(inp, **kwargs)
+        if isinstance(tokenized_texts[0], list):
+            tokenized_texts = [' '.join(i) for i in tokenized_texts]
+        with open(out, 'w', encoding='utf8') as f:
+            tokenized_texts = [self.morph_analyzer.to_morphs(i, **kwargs) for i in tokenized_texts]
+            f.writelines(tokenized_texts)
 
+    def _write_to_txt(self, inp_path, out_path, **kwargs):
         input_isdir = os.path.isdir(inp_path)
         if not os.path.exists(out_path) and input_isdir:
             os.makedirs(out_path)
@@ -261,7 +272,7 @@ class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
             while out in filenames:
                 out = os.path.join(out_path, basename + f'{random.randint(0,10000)}.txt')
             filenames.append(out)
-            proc = Process(target=write_one, args=(inp, out))
+            proc = Process(target=self._write_one, args=(inp, out))
             procs.append(proc)
             proc.start()
         for proc in procs:
@@ -302,18 +313,16 @@ class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
             os.makedirs(self.directory_path)
         tokenizer.model.save(self.directory_path, self.encoder_filename)
 
-    def encode(self, text):
-        if self.split_jamo:
-            text = self.morph_analyzer.to_morphs(text, True)
+    def encode(self, text, **kwargs):
+        text = self.morph_analyzer.to_morphs(text, **kwargs)
         encoded = self.tokenizer.encode(text).ids
         if self.imap:
             encoded = self.imap.convert_line(encoded)
         return encoded
 
-    def decode(self, indexed):
+    def decode(self, indexed, **kwargs):
         if self.imap:
             indexed = self.imap.rollback_line(indexed)
         decoded = self.tokenizer.decode(indexed)
-        if self.split_jamo:
-            decoded = self.morph_analyzer.to_texts(decoded)
+        decoded = self.morph_analyzer.to_texts(decoded, **kwargs)
         return decoded
