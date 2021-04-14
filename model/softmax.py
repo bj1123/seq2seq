@@ -5,7 +5,7 @@ from model.ops import gelu
 
 
 class AdaptiveSoftmax(nn.Module):
-    def __init__(self,vocab_size:int,hidden_dim:int,cutoffs:list,div_val:int):
+    def __init__(self, vocab_size:int, hidden_dim:int, cutoffs:list, div_val:int):
         super(AdaptiveSoftmax, self).__init__()
         self.n_clusters = len(cutoffs)
         self.head_size = cutoffs[0] + self.n_clusters
@@ -108,16 +108,14 @@ class FactorizedSoftmax(nn.Module):
     def soft_cluster_logit(self,x):
         logits = torch.zeros(x.size(0), self.vocab_size).to(x.device)
         cl = self.cluster_logit(x)
-        cluster_prob = torch.softmax(cl,dim=1) # [ batch, n_cluster]
         for i in range(self.n_clusters):
             l,r = self.cutoffs[i], self.cutoffs[i+1]
             logits_weights = self.logits[:,l:r]
             transformed = self.layer_norm[i](self.activation(self.transform[i](x)))
             tail_logit = torch.matmul(transformed,logits_weights)
-            tail_prob = torch.softmax(tail_logit,1)
             # print(cluster_prob[:,i].size(),tail_prob.size())
-            logits[:,l:r] = cluster_prob[:,i].unsqueeze(1) * tail_prob
-        return torch.log(logits)
+            logits[:,l:r] = cl[:,i].unsqueeze(1) + tail_logit
+        return logits
 
     def forward(self, x,y):
         """

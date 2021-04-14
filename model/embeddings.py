@@ -291,3 +291,43 @@ class HashEmbedding(nn.Module):
         embed = self.pool(hash_values)  # [bs, l, num_hash, embedding_dim]
         embed = (import_params.unsqueeze(-1) * embed).sum(2)
         return embed
+
+
+
+class AdaptiveEmbedding(tf.keras.layers.Layer):
+    def __init__(self, vocab_size: int, base_embedding_dim: int, projection_dim: int, initializer,
+                 cutoffs=None, div_val=2):
+        super(AdaptiveEmbedding, self).__init__()
+        self.vocab_size = vocab_size
+        self.n_cluster = len(cutoffs) + 1 if cutoffs is not None else 4
+        self.projection_dim = projection_dim
+        self.base_embedding_dim = base_embedding_dim
+        self.scale = projection_dim ** 0.5
+        cutoffs = cutoffs if cutoffs else self.compute_cutoffs()
+        self.cutoffs = [0] + cutoffs + [vocab_size]
+        self.embedding_dims = [base_embedding_dim // (div_val ** i) for i in range(self.n_cluster)]
+        self.embeddings = [self.add_weight(shape=(self.cutoffs[i + 1] - self.cutoffs[i],
+                                                  self.embedding_dims[i]), initializer=initializer,
+                                           name='embedding-{}'.format(i))
+                           for i in range(self.n_cluster)]
+        self.proj = [tf.keras.layers.Dense(projection_dim, kernel_initializer=initializer)
+                     for _ in self.embedding_dims]
+
+    def compute_cutoffs(self):
+        target_ratio = [0.01, 0.05, 0.2]
+        return [int(i * self.vocab_size) for i in target_ratio]
+
+    def call(self, x):
+        embeddings = tf.zeros_like(x, dtype=tf.float32)
+        embeddings = tf.tile(embeddings[...,None],(1,1,self.base_embedding_dim))
+        # embeddings = tf.zeros(x.shape + [self.base_embedding_dim])
+        for i in range(self.n_cluster):
+            l, r = self.cutoffs[i], self.cutoffs[i + 1]
+            mask = (x >= l) & (x < r)
+            ind = tf.where(mask)
+            x_i = tf.gather_nd(x,ind) - l
+            emb_i = tf.nn.embedding_lookup(self.embeddings[i], x_i)
+            projected_emb_i = self.proj[i](emb_i)
+            embeddings = tf.tensor_scatter_nd_add(embeddings,ind,projected_emb_i)
+        embeddings = tf.multiply(embeddings, self.scale)
+        return embeddings

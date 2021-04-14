@@ -62,6 +62,8 @@ if __name__ == '__main__':
     res = []
     cnt = 0
     t = time.time()
+    is_multi = sum([i in args.saved_model_folder for i in ('semi', 'multi')])
+    print(is_multi)
     for inp in batchfier:
         cnt += 1
         res.extend(sampler.sample(inp))
@@ -72,5 +74,5 @@ if __name__ == '__main__':
     # f = open(args.sample_save_path, 'w')
     # txts = [' '.join(map(str, i[:-1])) + ' \n' for i in res]
     # f.writelines(txts)
-    data = list(map(lambda x: x[1:-1], res)) if 'multi' in args.src_path else list(map(lambda x: x[:-1], res))
+    data = list(map(lambda x: x[1:-1], res)) if is_multi else list(map(lambda x: x[:-1], res))
     json.dump(data, open(args.sample_save_path, 'w'))

@@ -302,6 +302,7 @@ class MultilingualTokenizer(HFTokenizer):
         lang_tok = [self.tokenizer.token_to_id(self.language_token(lang))]
         pre_prossed = [self.morph_analyzer.to_morphs(i.rstrip(), lang=lang) for i in res]
         batch_encoded = self.tokenizer.encode_batch(pre_prossed)
+        del res
         encoded = [lang_tok + i.ids for i in batch_encoded]
 
         df = pd.DataFrame({'texts': encoded})
