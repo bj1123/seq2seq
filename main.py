@@ -39,12 +39,13 @@ def get_model(args):
                                        pos_enc=args.positional_encoding, shared_embedding=args.shared_embedding,
                                        tie_embedding=args.tie_embedding)
         elif args.model_type == 'attention-specific':
+            print('[+] test', args.num_src_lang, args.num_tgt_lang)
             model = AttentionSpecificMT(args.vocab_size, args.seq_len, args.hidden_dim, args.projection_dim,
-                                       args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
-                                       args.num_src_lang, args.num_tgt_lang, args.dropout_rate,
-                                       args.dropatt_rate, args.padding_index, pre_lnorm=args.pre_lnorm,
-                                       pos_enc=args.positional_encoding, shared_embedding=args.shared_embedding,
-                                       tie_embedding=args.tie_embedding)
+                                        args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
+                                        args.num_src_lang, args.num_tgt_lang, args.dropout_rate,
+                                        args.dropatt_rate, args.padding_index, pre_lnorm=args.pre_lnorm,
+                                        pos_enc=args.positional_encoding, shared_embedding=args.shared_embedding,
+                                        tie_embedding=args.tie_embedding)
 
         else:
             model = EncoderDecoderModel(args.vocab_size, args.seq_len, args.hidden_dim, args.projection_dim,

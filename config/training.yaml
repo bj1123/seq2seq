@@ -4,7 +4,7 @@ gathered: True
 device: 'cuda'
 batch_size: 20000
 gpu0_size: 8
-update_step: 2
+update_step: 4
 mixed_precision: True
 decay_step: 20000
 vocab_size: 30000
@@ -14,5 +14,5 @@ learning_rate: 0.00021
 weight_decay: 0.0001
 label_smoothing: 0.1
 decay_on_valid: True
-shared_embedding: False
+shared_embedding: True
 tie_embedding: False

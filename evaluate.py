@@ -15,8 +15,9 @@ def tos(l):
     return ' '.join(map(str,l))
 
 
-def tos2(l):
-    return ' '.join(map(str,l[1:-1]))
+def tos2(l, ismulti=False):
+    s = 2 if ismulti else 1
+    return ' '.join(map(str,l[s:-1]))
 
 
 def save(l, path):
@@ -28,10 +29,12 @@ def save(l, path):
 def main():
     args = get_args()
     gt = maybe_read(args.gt_path)
+    ismulti = 'semi' in args.sample_path
+    print(f'ismulti is : {ismulti}')
     samples = load_json(args.sample_path)
     res = list(map(tos, samples))
     save(res, 'sampled.txt')
-    res2 = list(map(tos2, gt.texts))
+    res2 = [tos2(i, ismulti) for i in gt.texts]
     save(res2, 'gt.txt')
 
 

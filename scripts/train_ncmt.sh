@@ -2,7 +2,7 @@
 export PYTHONPATH="${PYTHONPATH}:../"
 echo $PYTHONPATH
 
-DATASET=game_mt/raw/ko2en
+DATASET=game_mt/frac
 MODEL=plain
 PENCODING=absolute
 

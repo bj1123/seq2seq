@@ -198,6 +198,9 @@ class TransformerEmbedding(nn.Module):
         #                                one_emb_type='real', dropout=dropout_rate)
         # self.word_embedding = HashEmbedding(vocab_size, embedding_dim, padding_index)
         self.word_embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=padding_index)
+
+        # self.word_ln = nn.LayerNorm(embedding_dim)
+        # self.scale = nn.Parameter(torch.Tensor([0.02]))
         # self.pos_ln = nn.LayerNorm(embedding_dim)
         if self.use_pos_emb:
             self.posisition_embedding = nn.Embedding(max_seqlen, embedding_dim)
@@ -208,6 +211,7 @@ class TransformerEmbedding(nn.Module):
         ms = mem[0].size(1) if mem is not None else 0
         ks = qs + ms
         emb = self.word_embedding(x)
+        # emb = self.word_ln(emb) * self.scale
         if self.use_pos_emb:
             emb *= math.sqrt(self.embedding_dim)
             pos_indicator = torch.arange(ms, ks, 1).clamp_max_(self.seq_len).to(emb.device)
