@@ -7,7 +7,7 @@ DATASET=wmt
 MODEL=plain
 PENCODING=absolute
 LR=0.00021
-CKPT=epoch_10
+CKPT=epoch_9
 
 CUDA_VISIBLE_DEVICES=0 python sample.py \
   --is-sampling \

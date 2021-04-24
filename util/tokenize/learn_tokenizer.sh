@@ -5,8 +5,8 @@ echo $PYTHONPATH
 VOCAB_SIZE=30000
 
 python util/tokenize/main.py \
- --src-dir ../data/game_mt/raw/ko2en/ko \
- --target-dir ../data/game_mt/raw/ko2en/splited \
+ --src-dir ../data/game_mt/raw/zh2ko/ko \
+ --target-dir ../data/game_mt/raw/zh2ko/splited \
  --tokenizer-type WP \
  --prefix wp_ko_$VOCAB_SIZE \
  --data-type wikilarge \

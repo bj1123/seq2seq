@@ -4,13 +4,13 @@ export PYTHONPATH="${PYTHONPATH}:../"
 echo $PYTHONPATH
 
 PENCODING=absolute
-MODEL=attention-specific
+MODEL=plain
 EPOCH=8
 
 
 python evaluate.py \
 --gt-path ../data/game_mt/frac/encoded_mapped/ko2en/en/test.en.feather \
---sample-path data/sampled/game_mt/semi/en/$MODEL/base_0.00021''_$PENCODING/epoch_$EPOCH
+--sample-path data/sampled/game_mt/semi/en/$MODEL/_base_0.00021''_$PENCODING/epoch_$EPOCH
 
 perl multi-bleu.perl gt.txt < sampled.txt
 

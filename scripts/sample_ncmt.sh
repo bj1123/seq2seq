@@ -4,7 +4,7 @@ export PYTHONPATH="${PYTHONPATH}:../"
 echo $PYTHONPATH
 
 DATASET=game_mt
-MODEL=attention-specific
+MODEL=plain
 DATATYPE=frac
 TRAINING_TYPE=semi/en
 PAIR=ko2en
@@ -17,7 +17,7 @@ CUDA_VISIBLE_DEVICES=0 python sample.py \
   --task seq2seq \
   --src-path ../data/$DATASET/$DATATYPE/encoded_mapped/$PAIR/ko/ \
   --tgt-path ../data/$DATASET/$DATATYPE/encoded_mapped/$PAIR/en \
-  --saved-model-folder data/saved_model/$DATASET/$TRAINING_TYPE/$MODEL/base_$LR''_$PENCODING \
+  --saved-model-folder data/saved_model/$DATASET/$TRAINING_TYPE/$MODEL/_base_$LR''_$PENCODING \
   --saved-model-ckpt $CKPT \
   --sampling-mode beam \
   --positional-encoding $PENCODING \
