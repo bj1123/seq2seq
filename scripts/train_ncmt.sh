@@ -2,13 +2,13 @@
 export PYTHONPATH="${PYTHONPATH}:../"
 echo $PYTHONPATH
 
-DATASET=game_mt/frac
+DATASET=game_mt/raw/ja2ko
 MODEL=plain
 PENCODING=absolute
 
 CUDA_VISIBLE_DEVICES=0 python main.py \
- --src-path ../data/$DATASET/splited/ko/encoded_mapped \
- --tgt-path ../data/$DATASET/splited/en/encoded_mapped \
+ --src-path ../data/$DATASET/splited/ja/encoded_mapped \
+ --tgt-path ../data/$DATASET/splited/ko/encoded_mapped \
  --loss-type plain \
  --positional-encoding $PENCODING \
  --task seq2seq \

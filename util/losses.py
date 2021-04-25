@@ -48,7 +48,7 @@ class PlainLoss(BaseLoss):
         super(PlainLoss, self).__init__()
         self.padding_idx = padding_idx
         self.seq2seq = seq2seq
-        self.criteria = torch.nn.CrossEntropyLoss(ignore_index=padding_idx)
+        self.criteria = torch.nn.CrossEntropyLoss(ignore_index=padding_idx, reduction='sum')
         # self.metrics = {'perplexity': Perplexity(padding_idx)}
 
     def forward(self, out, inp):
@@ -57,9 +57,11 @@ class PlainLoss(BaseLoss):
             y_hat = y_hat.contiguous().view(-1, y_hat.size(-1))
             y = y.contiguous().view(-1)
         y = y.contiguous()
+        non_padding_cnt = (y != self.padding_idx).sum()
         l = self.criteria(y_hat,y)
         self.cum_loss +=l
-        return l
+        self.cum_cnt += non_padding_cnt
+        return l / non_padding_cnt
 
     def get_description(self):  # for pure pytorch
         tok_loss = self.cum_loss

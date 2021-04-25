@@ -5,12 +5,12 @@ echo $PYTHONPATH
 VOCAB_SIZE=30000
 
 python util/tokenize/main.py \
- --src-dir ../data/game_mt/raw/zh2ko/ko \
- --target-dir ../data/game_mt/raw/zh2ko/splited \
+ --src-dir ../data/game_mt/raw/ja2ko/ja \
+ --target-dir ../data/game_mt/raw/ja2ko/splited \
  --tokenizer-type WP \
- --prefix wp_ko_$VOCAB_SIZE \
+ --prefix wp_ja_$VOCAB_SIZE \
  --data-type wikilarge \
- --morph-analyzer-type mecab \
+ --morph-analyzer-type none \
  --vocab-size $VOCAB_SIZE;
 
 #python util/tokenize/main.py \
