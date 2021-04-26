@@ -1,9 +1,9 @@
 import pandas as pd
 import collections
+import itertools
 from util.files import *
 import argparse
 import re
-from util.files import maybe_read
 
 
 class IMap:
@@ -61,6 +61,11 @@ class IMap:
                 return trains
             else:
                 return temp
+
+    @staticmethod
+    def new_filename(filename):
+        nfn = re.sub(os.path.join('encoded', ''), os.path.join('encoded_mapped', ''), filename)
+        return nfn
 
     def _count(self, path):
         vocab_size = self.vocab_size
@@ -130,7 +135,7 @@ class IMap:
 
         for filename in filepath:
             cur_df = _convert_file(filename, self.dic)
-            new_filename = re.sub(os.path.join('encoded',''), os.path.join('encoded_mapped',''), filename)
+            new_filename = self.new_filename(filename)
             if not os.path.exists(os.path.dirname(new_filename)):
                 os.makedirs(os.path.dirname(new_filename))
             cur_df.to_feather(new_filename)
@@ -147,7 +152,6 @@ class IMap:
             break
         converted = []
         for token in line:
-
             converted.append(dic[dic_key_type(token)])
         return converted
 
@@ -160,6 +164,90 @@ class IMap:
                 new.append(int(inv_dic[ind]))
         return new
 
+class MultilingualImap(IMap):
+    def __init__(self, dir_path, prefix, vocab_size, added_special_tokens=None, **kwargs):
+        super(MultilingualImap, self).__init__(dir_path, prefix, vocab_size, added_special_tokens, **kwargs)
+
+    @staticmethod
+    def extract_language(path):
+        return os.path.basename(os.path.dirname(path))
+
+    @staticmethod
+    def get_path(dir_path, prefix):
+        probs_path = os.path.join(dir_path, '{}-probs-ml.json'.format(prefix))
+        dic_path = os.path.join(dir_path, '{}-dic-ml.json'.format(prefix))
+        return probs_path, dic_path
+
+    @staticmethod
+    def new_filename(filename):
+        sep = os.path.sep
+        pattern = re.compile(f'encoded(_mapped)?{sep}')
+        nfn = pattern.sub(f'encoded_mapped_ml{sep}', filename)
+        return nfn
+
+    @staticmethod
+    def to_pops(tok, dics):
+        rel_pos = [[i, dics[i][tok] / len(dics[i])] for i in dics if tok in dics[i]]
+        to_pops = sorted(rel_pos, key=lambda x: x[-1])[1:]
+        if to_pops:
+            return list(map(lambda x:x[0], to_pops))
+        else:
+            return []
+
+    @staticmethod
+    def cat(lists):
+        ml = min([len(i) for i in lists])
+        cated = list(itertools.chain(*zip(*[i[:ml] for i in lists])))
+        for i in lists:
+            cated.extend(i[ml:])
+        return cated
+
+    def _count(self, path):
+        vocab_size = self.vocab_size
+        lang_cnters = {}
+        s = set()
+        checks = self.get_columns(path[0])
+        if not self.target_names:
+            self.target_names = checks
+        targets = self.target_names
+        for filename in path:
+            lang = self.extract_language(filename)
+            if lang not in lang_cnters:
+                lang_cnters[lang] = collections.Counter()
+            cur_df = maybe_read(filename)
+            for target in targets:
+                texts = cur_df[target].tolist()
+                for i in texts:
+                    lang_cnters[lang].update(i[1:])
+                    s.add(i[0])
+            for check in checks:
+                texts = cur_df[check].tolist()
+                for i in texts:
+                    s.update(i)
+
+        # update missing vocabs
+        observed = set()
+        [observed.update(i) for i in lang_cnters.values()]
+        fl = list(lang_cnters.keys())[0]
+        lang_cnters[fl].update(s.difference(observed))
+        lang_cnters[fl].update(set(range(vocab_size)).difference(observed))
+
+        # special tokens
+        if self.added_special_tokens:
+            lang_cnters[list(lang_cnters.keys())[0]] .update(self.added_special_tokens)
+        dics_per_lang = {lang: {j[0]:i for i, j in enumerate(lang_cnters[lang].most_common())} for lang in lang_cnters}
+        for tok in observed:
+            tars = self.to_pops(tok, dics_per_lang)
+            for tar in tars:
+                dics_per_lang[tar].pop(tok)
+        sorted_toks = [list(map(lambda x: x[0], sorted(dics_per_lang[i].items(), key=lambda x: x[-1])))
+                             for i in dics_per_lang]
+        cated = self.cat(sorted_toks)
+        cum_prob = [0]  # deprecated
+        new_dict = dict([(int(old), int(new)) for new, old in enumerate(cated)])
+        return cum_prob, new_dict
+
+
 
 def get_parser():
     parser=argparse.ArgumentParser()
@@ -167,6 +255,7 @@ def get_parser():
                         help='parent directory path')
     parser.add_argument("--dir-path", type=str,
                         help='directory where input data is stored')
+    parser.add_argument("--target-filepath", type=str)
     parser.add_argument("--count-names", type=str, nargs='*')
     parser.add_argument("--check-names", type=str, nargs='*')
     parser.add_argument("--convert-names", type=str, nargs='*')
@@ -176,6 +265,7 @@ def get_parser():
 if __name__ =='__main__':
     parser = get_parser()
     args = parser.parse_args()
-    imap = IMap(args.dir_path, args.base_name)
-    imap.learn_dic(args.count_names, args.check_names)
-    imap.convert_and_save(args.convert_names)
+    imap = MultilingualImap(args.dir_path, args.base_name, 60000)
+    paths = get_files(args.target_filepath)
+    imap.learn_dic(paths)
+    imap.convert_corpus(paths)

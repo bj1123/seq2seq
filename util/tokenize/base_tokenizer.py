@@ -14,13 +14,13 @@ from util.files import maybe_read
 
 
 class BaseTokenizer(ABC):
-    def __init__(self, dir_path, prefix, vocab_size=10000, use_imap=False, **kwargs):
+    def __init__(self, dir_path, prefix, vocab_size=10000, imap_type=IMap, **kwargs):
         self.tokenizer, self.is_trained = self._load_tokenizer(dir_path, prefix)
         self.encoder_filename = prefix
         self.directory_path = dir_path
         self.vocab_size = vocab_size
         self.out_name = '_encoded'
-        self.imap = IMap(dir_path, prefix, vocab_size) if use_imap else None
+        self.imap = imap_type(dir_path, prefix, vocab_size) if imap_type else None
 
     @staticmethod
     def _get_files(path, filter_train=False, filter_words=None):
