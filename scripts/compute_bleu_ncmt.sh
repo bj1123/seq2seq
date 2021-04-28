@@ -5,12 +5,16 @@ echo $PYTHONPATH
 
 PENCODING=absolute
 MODEL=plain
-EPOCH=8
-
+EPOCH=9
 
 python evaluate.py \
---gt-path ../data/game_mt/frac/encoded_mapped/ko2en/en/test.en.feather \
---sample-path data/sampled/game_mt/semi/en/$MODEL/_base_0.00021''_$PENCODING/epoch_$EPOCH
+--gt-path ../data/game_mt/raw/ja2ko/splited/ko/encoded_mapped/test.ko.feather \
+--sample-path zh
+#--sample-path data/sampled/game_mt/raw/zh2ko/$MODEL/base_0.00021''_$PENCODING/epoch_$EPOCH
+
+#python evaluate.py \
+#--gt-path ../data/game_mt/frac/encoded_mapped/ko2en/en/test.en.feather \
+#--sample-path data/sampled/game_mt/semi/en/$MODEL/_base_0.00021''_$PENCODING/epoch_$EPOCH
 
 perl multi-bleu.perl gt.txt < sampled.txt
 

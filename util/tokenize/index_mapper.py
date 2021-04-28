@@ -164,6 +164,7 @@ class IMap:
                 new.append(int(inv_dic[ind]))
         return new
 
+
 class MultilingualImap(IMap):
     def __init__(self, dir_path, prefix, vocab_size, added_special_tokens=None, **kwargs):
         super(MultilingualImap, self).__init__(dir_path, prefix, vocab_size, added_special_tokens, **kwargs)

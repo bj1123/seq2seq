@@ -115,6 +115,9 @@ class MTArgument(BaseArgument):
         if data['saved_model_folder'] and data['saved_model_ckpt']:
             data['load_path'] = os.path.join(data['saved_model_folder'], data['saved_model_ckpt'])
             data['sample_save_path'] = data['load_path'].replace('saved_model', 'sampled')
+            if f'{os.path.sep}semi{os.path.sep}' in data['saved_model_folder']:
+                data['sample_save_path'] = data['sample_save_path'] +\
+                                           '_' +os.path.basename(data['src_path'])
 
 
 class MultitaskArgument(BaseArgument):

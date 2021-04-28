@@ -291,8 +291,8 @@ class MultilingualTokenizer(HFTokenizer):
         lang = self.get_language(file_path)
         with open(file_path, 'r', encoding='utf-8') as f:
             res = f.readlines()
-        if lang == 'en':
-            res = [i for idx, i in enumerate(res) if idx % 3.5 >= 1]  # hard-coded should be modified
+        if lang == 'ko':
+            res = [i for idx, i in enumerate(res) if idx % 2>= 1]  # hard-coded should be modified
         return res
 
     def _encode_file(self, inp, out, **kwargs):

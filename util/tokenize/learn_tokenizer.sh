@@ -2,14 +2,14 @@
 export PYTHONPATH="${PYTHONPATH}:../"
 echo $PYTHONPATH
 
-VOCAB_SIZE=30000
+VOCAB_SIZE=140000
 
 python util/tokenize/main.py \
- --src-dir ../data/game_mt/raw/ja2ko/ja \
- --target-dir ../data/game_mt/raw/ja2ko/splited \
+ --src-dir ../data/game_mt/2ko \
+ --target-dir ../data/game_mt/2ko \
  --tokenizer-type WP \
- --prefix wp_ja_$VOCAB_SIZE \
- --data-type wikilarge \
+ --prefix wp_$VOCAB_SIZE \
+ --data-type multilingual \
  --morph-analyzer-type none \
  --vocab-size $VOCAB_SIZE;
 
