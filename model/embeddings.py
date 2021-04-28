@@ -193,13 +193,13 @@ class TransformerEmbedding(nn.Module):
 
         # self.word_embedding = HybridEmbedding(vocab_size, embedding_dim, padding_index, dropout_rate)
         # self.word_embedding = StructuredEmbedding(vocab_size, embedding_dim)
-        # self.word_embedding = AdaptiveEmbedding(vocab_size, embedding_dim, embedding_dim)
+        self.word_embedding = AdaptiveEmbedding(vocab_size, embedding_dim, embedding_dim)
         # self.word_embedding = OneEmbed(vocab_size, embedding_dim, padding_index,
         #                                one_emb_type='real', dropout=dropout_rate)
         # self.word_embedding = HashEmbedding(vocab_size, embedding_dim, padding_index)
-        self.word_embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=padding_index)
+        # self.word_embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=padding_index)
 
-        # self.word_ln = nn.LayerNorm(embedding_dim)
+        self.word_ln = nn.LayerNorm(embedding_dim)
         # self.scale = nn.Parameter(torch.Tensor([0.02]))
         # self.pos_ln = nn.LayerNorm(embedding_dim)
         if self.use_pos_emb:
@@ -212,6 +212,7 @@ class TransformerEmbedding(nn.Module):
         ks = qs + ms
         emb = self.word_embedding(x)
         # emb = self.word_ln(emb) * self.scale
+        emb = self.word_ln(emb) * self.posisition_embedding.weight.std(dim=0).detach()
         if self.use_pos_emb:
             emb *= math.sqrt(self.embedding_dim)
             pos_indicator = torch.arange(ms, ks, 1).clamp_max_(self.seq_len).to(emb.device)
