@@ -1,4 +1,5 @@
 from util.tokenize.base_tokenizer import *
+from util.tokenize.index_mapper import *
 import pandas as pd
 import re
 
@@ -21,12 +22,12 @@ class MTSpaceTokenizer(SpaceTokenizer):
 class WikiLargeTokenizer(HFTokenizer):
     def __init__(self, directory_path, prefix, vocab_size=10000, tokenizer_class='wp',
                  morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser,
-                 use_imap=True, split_jamo=False, **kwargs):
+                 imap_type=IMap, split_jamo=False, **kwargs):
         super(WikiLargeTokenizer, self).__init__(directory_path, prefix, vocab_size,
                                                  tokenizer_class=tokenizer_class,
                                                  morph_analyzer_class=morph_analyzer_class,
                                                  cleanser_class=cleanser_class,
-                                                 use_imap=use_imap,
+                                                 imap_type=imap_type,
                                                  split_jamo=split_jamo,
                                                  **kwargs)
 
@@ -47,14 +48,14 @@ class WikiLargeTokenizer(HFTokenizer):
 class MultiTaskTokenizer(HFTokenizer):  # for un-corpus
     def __init__(self, directory_path, prefix, vocab_size=30000, tokenizer_class='wp',
                  morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser, tokens_to_add=None,
-                 use_imap=True, split_jamo=False, use_control_token=True, **kwargs):
+                 imap_type=IMap, split_jamo=False, use_control_token=True, **kwargs):
         from util.tokenize.data_reformatter import MultitaskReformatter
         super(MultiTaskTokenizer, self).__init__(directory_path, prefix, vocab_size,
                                                  tokenizer_class=tokenizer_class,
                                                  morph_analyzer_class=morph_analyzer_class,
                                                  cleanser_class=cleanser_class,
                                                  tokens_to_add=tokens_to_add,
-                                                 use_imap=use_imap,
+                                                 imap_type=imap_type,
                                                  split_jamo=split_jamo,
                                                  **kwargs)
         self.task_map = MultitaskReformatter.tasks_map
@@ -178,13 +179,13 @@ class MultiTaskTokenizer(HFTokenizer):  # for un-corpus
 class UNTokenizer(HFTokenizer):
     def __init__(self, directory_path, prefix, vocab_size=30000, tokenizer_class='wp',
                  morph_analyzer_class=NullAnalyzer, cleanser_class=NullCleanser, tokens_to_add=None,
-                 use_imap=True, split_jamo=False, use_control_token=False, target_lang=None, **kwargs):
+                 imap_type=IMap, split_jamo=False, use_control_token=False, target_lang=None, **kwargs):
         super(UNTokenizer, self).__init__(directory_path, prefix, vocab_size,
                                           tokenizer_class=tokenizer_class,
                                           morph_analyzer_class=morph_analyzer_class,
                                           cleanser_class=cleanser_class,
                                           tokens_to_add=tokens_to_add,
-                                          use_imap=use_imap,
+                                          imap_type=imap_type,
                                           split_jamo=split_jamo,
                                           **kwargs)
         self.use_control_token = use_control_token
@@ -254,14 +255,14 @@ class UNTokenizer(HFTokenizer):
 class MultilingualTokenizer(HFTokenizer):
     def __init__(self, directory_path, prefix, vocab_size=30000, tokenizer_class='wp',
                  cleanser_class=NullCleanser, tokens_to_add=None,
-                 use_imap=True, split_jamo=False, target_lang=None, **kwargs):
+                 imap_type=IMap, split_jamo=False, target_lang=None, **kwargs):
         kwargs.pop('morph_analyzer_class', None)
         super(MultilingualTokenizer, self).__init__(directory_path, prefix, vocab_size,
                                                     tokenizer_class=tokenizer_class,
                                                     morph_analyzer_class=MultilingualAnalyzer,
                                                     cleanser_class=cleanser_class,
                                                     tokens_to_add=tokens_to_add,
-                                                    use_imap=use_imap,
+                                                    imap_type=imap_type,
                                                     split_jamo=split_jamo,
                                                     **kwargs)
         self.target_lang = target_lang

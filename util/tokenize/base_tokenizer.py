@@ -184,7 +184,7 @@ class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
 
     def __init__(self, dir_path, prefix, vocab_size=10000, tokenizer_class='wp',
                  morph_analyzer_class=MecabAnalyzer, cleanser_class=NullCleanser, tokens_to_add=None,
-                 use_imap=True, split_jamo=False, **kwargs):
+                 imap_type=IMap, split_jamo=False, **kwargs):
         if split_jamo:
             assert tokenizer_class.lower() == 'wp', \
                 'Ja-mo level tokenization is only compatible with BertWordPieceTokenizer'
@@ -193,11 +193,11 @@ class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
             self.space_symbol = 'ㅬ'
         self.morph_analyzer = morph_analyzer_class(space_symbol=self.space_symbol, jamo=split_jamo)
         self.cleanser = cleanser_class()
-        self.imap = IMap(dir_path, prefix, vocab_size, tokens_to_add) if use_imap else None
+        self.imap = imap_type(dir_path, prefix, vocab_size, tokens_to_add) if imap_type else None
         self.split_jamo = split_jamo
         self.tokenizer_class = tokenizer_class.lower()
         self.tokens_to_add = tokens_to_add
-        super(HFTokenizer, self).__init__(dir_path, prefix, vocab_size, use_imap, **kwargs)
+        super(HFTokenizer, self).__init__(dir_path, prefix, vocab_size, imap_type, **kwargs)
 
     def token_to_id(self, token):
         id = self.tokenizer.token_to_id(token)
