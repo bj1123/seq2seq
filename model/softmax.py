@@ -2,6 +2,30 @@ import torch
 import torch.nn as nn
 from util.sampler import top_p_logits, top_k_logits
 from model.ops import gelu
+from model.embeddings import AdaptiveBase
+
+
+class SemiAdaptiveSoftmax(AdaptiveBase):
+    def __init__(self, vocab_size: int, hidden_dim: int,
+                 cutoffs=None, div_val=2):
+        super(SemiAdaptiveSoftmax, self).__init__(vocab_size, hidden_dim, cutoffs, div_val)
+        self.head = nn.Linear(hidden_dim, self.cutoffs[1], bias=False)
+        self.projections = nn.ModuleList()
+        self.tails = nn.ModuleList()
+
+        for i in range(1, self.n_clusters):
+            n_vocabs = self.cutoffs[i] + self.cutoffs[i+1]
+            self.projections.append(nn.Linear(hidden_dim, self.embedding_dims[i], bias=False))
+            self.tails.append(nn.Linear(self.proj_dims[i], n_vocabs, bias=False))
+
+    def call(self, x):
+        head_word_logits = self.head(x)
+        tail_word_logits = []
+        for i in range(self.n_clusters-1):
+            proj = self.projections[i](x)
+            tail = self.tails[i](proj)
+            tail_word_logits.append(tail)
+        return tf.concat([head_word_logits, *tails_sum_logits], -1)
 
 
 class AdaptiveSoftmax(nn.Module):

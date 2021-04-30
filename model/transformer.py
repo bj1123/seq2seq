@@ -341,7 +341,8 @@ class EncoderDecoderModel(EncoderDecoderBase):
             self.final = lambda x: torch.matmul(x, embedding_weight.T)
 
         else:
-            self.final = nn.Linear(hidden_dim, vocab_size, bias=False)  # To-Do : implement tie embedding
+            self.final = SemiAdaptiveSoftmax(hidden_dim, vocab_size)
+            # self.final = nn.Linear(hidden_dim, vocab_size, bias=False)
 
     def encode_src(self, inp):
         src, src_len = inp['src'], inp['src_len']

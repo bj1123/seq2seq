@@ -99,6 +99,22 @@ class StructuredEmbedding(nn.Module):
         return self.ln(emb) * self.scale
 
 
+class AdaptiveBase(nn.Module):
+    def __init__(self, vocab_size:int, hidden_dim:int, cutoffs=None, div_val=2):
+        super(AdaptiveBase, self).__init__()
+        self.vocab_size = vocab_size
+        self.n_cluster = len(cutoffs) + 1 if cutoffs is not None else 4
+        self.projection_dim = projection_dim
+        self.scale = projection_dim ** 0.5
+        cutoffs = cutoffs if cutoffs else self.compute_cutoffs()
+        self.cutoffs = [0] + cutoffs + [vocab_size]
+        self.embedding_dims = [hidden_dim // (div_val ** i) for i in range(self.n_cluster)]
+
+    def compute_cutoffs(self):
+        target_ratio = [0.01, 0.05, 0.2]
+        return [int(i*self.vocab_size) for i in target_ratio]
+
+
 class AdaptiveEmbedding(nn.Module):
     def __init__(self, vocab_size:int, base_embedding_dim:int, projection_dim:int,
                  cutoffs=None, div_val=2):
