@@ -104,8 +104,8 @@ class AdaptiveBase(nn.Module):
         super(AdaptiveBase, self).__init__()
         self.vocab_size = vocab_size
         self.n_cluster = len(cutoffs) + 1 if cutoffs is not None else 4
-        self.projection_dim = projection_dim
-        self.scale = projection_dim ** 0.5
+        self.projection_dim = hidden_dim
+        self.scale = hidden_dim ** 0.5
         cutoffs = cutoffs if cutoffs else self.compute_cutoffs()
         self.cutoffs = [0] + cutoffs + [vocab_size]
         self.embedding_dims = [hidden_dim // (div_val ** i) for i in range(self.n_cluster)]
@@ -209,13 +209,13 @@ class TransformerEmbedding(nn.Module):
 
         # self.word_embedding = HybridEmbedding(vocab_size, embedding_dim, padding_index, dropout_rate)
         # self.word_embedding = StructuredEmbedding(vocab_size, embedding_dim)
-        self.word_embedding = AdaptiveEmbedding(vocab_size, embedding_dim, embedding_dim)
+        # self.word_embedding = AdaptiveEmbedding(vocab_size, embedding_dim, embedding_dim)
         # self.word_embedding = OneEmbed(vocab_size, embedding_dim, padding_index,
         #                                one_emb_type='real', dropout=dropout_rate)
         # self.word_embedding = HashEmbedding(vocab_size, embedding_dim, padding_index)
-        # self.word_embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=padding_index)
+        self.word_embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=padding_index)
 
-        self.word_ln = nn.LayerNorm(embedding_dim)
+        # self.word_ln = nn.LayerNorm(embedding_dim, elementwise_affine=False)
         # self.scale = nn.Parameter(torch.Tensor([0.02]))
         # self.pos_ln = nn.LayerNorm(embedding_dim)
         if self.use_pos_emb:
@@ -228,7 +228,7 @@ class TransformerEmbedding(nn.Module):
         ks = qs + ms
         emb = self.word_embedding(x)
         # emb = self.word_ln(emb) * self.scale
-        emb = self.word_ln(emb) * self.posisition_embedding.weight.std(dim=0).detach()
+        # emb = self.word_ln(emb) * self.posisition_embedding.weight.std(dim=0).detach()
         if self.use_pos_emb:
             emb *= math.sqrt(self.embedding_dim)
             pos_indicator = torch.arange(ms, ks, 1).clamp_max_(self.seq_len).to(emb.device)

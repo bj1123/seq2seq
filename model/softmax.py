@@ -13,19 +13,19 @@ class SemiAdaptiveSoftmax(AdaptiveBase):
         self.projections = nn.ModuleList()
         self.tails = nn.ModuleList()
 
-        for i in range(1, self.n_clusters):
-            n_vocabs = self.cutoffs[i] + self.cutoffs[i+1]
+        for i in range(1, self.n_cluster):
+            n_vocabs = self.cutoffs[i+1] - self.cutoffs[i]
             self.projections.append(nn.Linear(hidden_dim, self.embedding_dims[i], bias=False))
-            self.tails.append(nn.Linear(self.proj_dims[i], n_vocabs, bias=False))
+            self.tails.append(nn.Linear(self.embedding_dims[i], n_vocabs, bias=False))
 
-    def call(self, x):
+    def forward(self, x):
         head_word_logits = self.head(x)
         tail_word_logits = []
-        for i in range(self.n_clusters-1):
+        for i in range(self.n_cluster-1):
             proj = self.projections[i](x)
             tail = self.tails[i](proj)
             tail_word_logits.append(tail)
-        return tf.concat([head_word_logits, *tails_sum_logits], -1)
+        return torch.cat([head_word_logits, *tail_word_logits], -1)
 
 
 class AdaptiveSoftmax(nn.Module):
