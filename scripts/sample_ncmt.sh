@@ -5,9 +5,9 @@ echo $PYTHONPATH
 
 DATASET=game_mt
 MODEL=plain
-DATATYPE=2ko
-TRAINING_TYPE=semi/ko
-PAIR=zh2ko
+DATATYPE=frac
+TRAINING_TYPE=semi/en
+PAIR=zh2en
 PENCODING=absolute
 LR=0.00021
 CKPT=epoch_9
@@ -15,9 +15,9 @@ CKPT=epoch_9
 CUDA_VISIBLE_DEVICES=0 python sample.py \
   --is-sampling \
   --task seq2seq \
-  --src-path ../data/$DATASET/$DATATYPE/encoded_mapped/$PAIR/zh \
-  --tgt-path ../data/$DATASET/$DATATYPE/encoded_mapped/$PAIR/ko \
-  --saved-model-folder data/saved_model/$DATASET/$TRAINING_TYPE/$MODEL/base_$LR''_$PENCODING \
+  --src-path ../data/$DATASET/$DATATYPE/encoded_mapped_ml/$PAIR/zh \
+  --tgt-path ../data/$DATASET/$DATATYPE/encoded_mapped_ml/$PAIR/en \
+  --saved-model-folder data/saved_model/$DATASET/$TRAINING_TYPE/$MODEL/base_$LR''_$PENCODING''_adaml \
   --saved-model-ckpt $CKPT \
   --sampling-mode beam \
   --positional-encoding $PENCODING \

@@ -215,6 +215,7 @@ class TransformerEmbedding(nn.Module):
         # self.word_embedding = HashEmbedding(vocab_size, embedding_dim, padding_index)
         self.word_embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=padding_index)
 
+        # self.word_ln = nn.LayerNorm(embedding_dim)
         # self.word_ln = nn.LayerNorm(embedding_dim, elementwise_affine=False)
         # self.scale = nn.Parameter(torch.Tensor([0.02]))
         # self.pos_ln = nn.LayerNorm(embedding_dim)
