@@ -59,24 +59,26 @@ class MNMTTargetLangTokenizer(HFTokenizer):
         self.target_lang = target_lang
 
     @staticmethod
+    def _get_files(path, filter_train=False, filter_words=None):
+        paths = super()._get_files(path, filter_train, filter_words)
+        return list(filter(lambda x: self.get_language(x) == self.target_lang, paths))
+
+    @staticmethod
     def get_language(filepath):
         return os.path.basename(os.path.dirname(filepath))
 
     def _read_file(self, file_path, **kwargs):
-        lang = self.get_language(file_path)
-        if lang == self.target_lang:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                res = f.readlines()
-                res = list(map(lambda x: x, res))
-            return res
+        with open(file_path, 'r', encoding='utf-8') as f:
+            res = f.readlines()
+            res = list(map(lambda x: x, res))
+        return res
 
     def _encode_file(self, inp, out, **kwargs):
         res = self._read_file(inp, **kwargs)
-        if res:
-            # encoded = [self.tokenizer.encode(i.rstrip()).ids for i in res]
-            encoded = [self.tokenizer.encode(self.morph_analyzer.to_morphs(i.rstrip())).ids for i in res]
-            df = pd.DataFrame({'texts': encoded})
-            self._save_df(df, out)
+        # encoded = [self.tokenizer.encode(i.rstrip()).ids for i in res]
+        encoded = [self.tokenizer.encode(self.morph_analyzer.to_morphs(i.rstrip())).ids for i in res]
+        df = pd.DataFrame({'texts': encoded})
+        self._save_df(df, out)
 
 
 class MultiTaskTokenizer(HFTokenizer):  # for un-corpus
@@ -301,6 +303,12 @@ class MultilingualTokenizer(HFTokenizer):
                                                     **kwargs)
         self.target_lang = target_lang
 
+
+    @staticmethod
+    def _get_files(path, filter_train=False, filter_words=None):
+        paths = super()._get_files(path, filter_train, filter_words)
+        return list(filter(lambda x: self.get_language(x) != self.target_lang, paths))
+
     @staticmethod
     def language_token(token):
         return f'[{token.upper()}]'
@@ -324,8 +332,6 @@ class MultilingualTokenizer(HFTokenizer):
 
     def _read_file(self, file_path, **kwargs):
         lang = self.get_language(file_path)
-        if lang == self.target_lang:
-            return []
         with open(file_path, 'r', encoding='utf-8') as f:
             res = f.readlines()
         if lang == 'ko':
@@ -335,9 +341,6 @@ class MultilingualTokenizer(HFTokenizer):
     def _encode_file(self, inp, out, **kwargs):
         with open(inp, 'r', encoding='utf-8') as f:
             res = f.readlines()
-        lang = self.get_language(inp)
-        if lang == self.target_lang:
-            return
         lang_tok = [self.tokenizer.token_to_id(self.language_token(lang))]
         pre_prossed = [self.morph_analyzer.to_morphs(i.rstrip(), lang=lang) for i in res]
         batch_encoded = self.tokenizer.encode_batch(pre_prossed)
