@@ -245,11 +245,12 @@ class HFTokenizer(BaseTokenizer, ABC):  # Hugging Face tokenizers
         if os.path.exists(out):
             return
         tokenized_texts = self._read_file(inp, **kwargs)
-        if isinstance(tokenized_texts[0], list):
-            tokenized_texts = [' '.join(i) for i in tokenized_texts]
-        with open(out, 'w', encoding='utf8') as f:
-            tokenized_texts = [self.morph_analyzer.to_morphs(i, **kwargs) for i in tokenized_texts]
-            f.writelines(tokenized_texts)
+        if tokenized_texts:
+            if isinstance(tokenized_texts[0], list):
+                tokenized_texts = [' '.join(i) for i in tokenized_texts]
+            with open(out, 'w', encoding='utf8') as f:
+                tokenized_texts = [self.morph_analyzer.to_morphs(i, **kwargs) for i in tokenized_texts]
+                f.writelines(tokenized_texts)
 
     def _write_to_txt(self, inp_path, out_path, **kwargs):
         input_isdir = os.path.isdir(inp_path)
