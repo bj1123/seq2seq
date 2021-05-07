@@ -73,6 +73,7 @@ class Trainer:
                 continue
             out = model(inp)
             loss = criteria(out, inp)
+            loss = loss / self.update_step
             step_loss += loss.item()
             tot_loss += loss.item()
             if self.mixed_precision:

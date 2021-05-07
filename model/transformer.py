@@ -341,8 +341,8 @@ class EncoderDecoderModel(EncoderDecoderBase):
             self.final = lambda x: torch.matmul(x, embedding_weight.T)
 
         else:
-            self.final = SemiAdaptiveSoftmax(vocab_size, hidden_dim)
-            # self.final = nn.Linear(hidden_dim, vocab_size, bias=False)
+            # self.final = SemiAdaptiveSoftmax(vocab_size, hidden_dim)
+            self.final = nn.Linear(hidden_dim, vocab_size, bias=False)
 
     def encode_src(self, inp):
         src, src_len = inp['src'], inp['src_len']

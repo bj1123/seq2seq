@@ -7,10 +7,10 @@ gpu0_size: 8
 update_step: 4
 mixed_precision: True
 decay_step: 20000
-vocab_size: 30000
+vocab_size: 140000
 warmup_step: 2000
 clip_norm: 0.25
-learning_rate: 0.00021
+learning_rate: 0.0008
 weight_decay: 0.0001
 label_smoothing: 0.1
 decay_on_valid: True
