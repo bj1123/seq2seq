@@ -11,10 +11,10 @@ from util.lr_scheduler import *
 
 
 def get_model(args):
-    print(args.savename, args.batch_size, args.n_epoch, args.vocab_size, args.seq_len, args.hidden_dim,
+    print(args.savename, args.batch_size, args.n_epoch, args.src_vocab_size, args.seq_len, args.hidden_dim,
           args.projection_dim, args.n_heads,
           args.head_dim, args.n_enc_layers, args.n_dec_layers, args.dropout_rate,
-          args.dropatt_rate, args.padding_index, args.shared_embedding, args.tie_embedding)
+          args.dropatt_rate, args.src_padding_index, args.shared_embedding, args.tie_embedding)
     if args.task in ('seq2seq', 'access', 'mnmt'):
         if args.model_type == 'complexity-aware':
             model = ComplexityAwareModel(args.vocab_size, args.seq_len, args.hidden_dim, args.projection_dim,
@@ -48,10 +48,11 @@ def get_model(args):
                                         tie_embedding=args.tie_embedding)
 
         else:
-            model = EncoderDecoderModel(args.vocab_size, args.seq_len, args.hidden_dim, args.projection_dim,
-                                        args.n_heads, args.head_dim, args.n_enc_layers, args.n_dec_layers,
-                                        args.dropout_rate,
-                                        args.dropatt_rate, args.padding_index, pre_lnorm=args.pre_lnorm,
+            model = EncoderDecoderModel(args.src_vocab_size, args.tgt_vocab_size, args.seq_len, args.hidden_dim,
+                                        args.projection_dim, args.n_heads, args.head_dim, args.n_enc_layers,
+                                        args.n_dec_layers, args.dropout_rate,
+                                        args.dropatt_rate, args.src_padding_index, args.tgt_padding_index,
+                                        pre_lnorm=args.pre_lnorm,
                                         pos_enc=args.positional_encoding, shared_embedding=args.shared_embedding,
                                         tie_embedding=args.tie_embedding)
     elif args.task == 'multitask':
@@ -83,30 +84,38 @@ def get_batchfier(args):
             #                              args.batch_size // args.update_step, seq_len=args.seq_len, epoch_shuffle=False,
             #                              padding_index=args.padding_index, device=args.device)
             train_batchfier = TorchTextMTMono(args.train_src_path, args.train_tgt_path, args.train_example_path,
-                                              args.batch_size // args.update_step, padding_index=args.padding_index,
+                                              args.batch_size // args.update_step,
+                                              src_padding_index=args.src_padding_index,
+                                              tgt_padding_index=args.tgt_padding_index,
                                               maxlen=args.seq_len, device=args.device)
             test_batchfier = TorchTextMTMono(args.test_src_path, args.test_tgt_path, args.test_example_path,
-                                             args.batch_size // args.update_step, padding_index=args.padding_index,
+                                             args.batch_size // args.update_step,
+                                             src_padding_index=args.src_padding_index,
+                                             tgt_padding_index=args.tgt_padding_index,
                                              maxlen=args.seq_len, device=args.device)
     elif args.task == 'mnmt':
         if args.model_type == 'plain':
             train_batchfier = TorchTextMTMulti(args.train_path,
                                                args.batch_size // args.update_step, args.train_example_path,
-                                               padding_index=args.padding_index,
+                                               src_padding_index=args.src_padding_index,
+                                               tgt_padding_index=args.tgt_padding_index,
                                                maxlen=args.seq_len, target_lang=args.target_lang, device=args.device)
             test_batchfier = TorchTextMTMulti(args.test_path,
                                               args.batch_size // args.update_step, args.test_example_path,
-                                              padding_index=args.padding_index,
+                                              src_padding_index=args.src_padding_index,
+                                              tgt_padding_index=args.tgt_padding_index,
                                               maxlen=args.seq_len, target_lang=args.target_lang, device=args.device)
         else:
             train_batchfier = TorchTextMTMultiTask(args.train_path,
                                                    args.batch_size // args.update_step, args.train_example_path,
-                                                   padding_index=args.padding_index,
+                                                   src_padding_index=args.src_padding_index,
+                                                   tgt_padding_index=args.tgt_padding_index,
                                                    maxlen=args.seq_len, target_lang=args.target_lang,
                                                    device=args.device)
             test_batchfier = TorchTextMTMultiTask(args.test_path,
                                                   args.batch_size // args.update_step, args.test_example_path,
-                                                  padding_index=args.padding_index,
+                                                  src_padding_index=args.src_padding_index,
+                                                  tgt_padding_index=args.tgt_padding_index,
                                                   maxlen=args.seq_len, target_lang=args.target_lang, device=args.device)
         # train_batchfier = MTBatchfier(args.train_src_path, args.train_tgt_path, args.batch_size, args.seq_len,
         #                               padding_index=args.padding_index, device=args.device)
@@ -128,9 +137,9 @@ def get_loss(args, train_batchfier):
     lt = args.loss_type
     if lt == 'plain':
         if args.label_smoothing > 0:
-            loss = LabelSmoothingLoss(args.vocab_size, ignore_index=train_batchfier.padding_index, device=args.device)
+            loss = LabelSmoothingLoss(args.vocab_size, ignore_index=train_batchfier.tgt_padding_index, device=args.device)
         else:
-            loss = PlainLoss(train_batchfier.padding_index)
+            loss = PlainLoss(train_batchfier.tgt_padding_index)
     else:
         raise NotImplementedError
     if args.model_type == 'complexity-aware':

@@ -53,14 +53,15 @@ class TorchTextMTBase(ABC):
     def sort_key(ex):
         return data.interleave_keys(len(ex.src_texts), len(ex.tgt_texts))
 
-    def __init__(self, batch_size, padding_index, maxlen=512, batch_criteria='token',
+    def __init__(self, batch_size, src_padding_index, tgt_padding_index, maxlen=512, batch_criteria='token',
                  epoch_shuffle=True, sampling_mode=False, device='cuda', **kwargs):
-        self.fields = [('src_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
-                       ('tgt_texts', data.Field(use_vocab=False, pad_token=padding_index, batch_first=True)),
+        self.fields = [('src_texts', data.Field(use_vocab=False, pad_token=src_padding_index, batch_first=True)),
+                       ('tgt_texts', data.Field(use_vocab=False, pad_token=tgt_padding_index, batch_first=True)),
                        ('src_len', data.Field(sequential=False, use_vocab=False)),
                        ('tgt_len', data.Field(sequential=False, use_vocab=False))]
         super(TorchTextMTBase, self).__init__(**kwargs)
-        self.padding_index = padding_index
+        self.src_padding_index = src_padding_index
+        self.tgt_padding_index = tgt_padding_index
         self.batch_size = batch_size
         self.batch_criteria = batch_criteria
         self.epoch_shuffle = epoch_shuffle
@@ -135,9 +136,10 @@ class TorchTextMTBase(ABC):
 
 class TorchTextMTMono(TorchTextMTBase):
     def __init__(self, src_filepath, tgt_filepath, example_path,
-                 batch_size, padding_index, maxlen=512, batch_criteria='token',
+                 batch_size, src_padding_index, tgt_padding_index, maxlen=512, batch_criteria='token',
                  epoch_shuffle=True, sampling_mode=False, device='cuda', **kwargs):
-        super(TorchTextMTMono, self).__init__(batch_size, padding_index, maxlen, batch_criteria, epoch_shuffle,
+        super(TorchTextMTMono, self).__init__(batch_size, src_padding_index, tgt_padding_index,
+                                              maxlen, batch_criteria, epoch_shuffle,
                                               sampling_mode, device, **kwargs)
         self.src = maybe_read(src_filepath[0])  # temporary implementation.
         self.tgt = maybe_read(tgt_filepath[0])
@@ -165,10 +167,11 @@ class TorchTextMTMono(TorchTextMTBase):
 
 
 class TorchTextMTMulti(TorchTextMTBase):
-    def __init__(self, file_path, batch_size, example_path, padding_index, n_chunk=1, maxlen=512,
+    def __init__(self, file_path, batch_size, example_path, src_padding_index, tgt_padding_index, n_chunk=1, maxlen=512,
                  batch_criteria='token',
                  epoch_shuffle=True, sampling_mode=False, target_lang=None, device='cuda', **kwargs):
-        super(TorchTextMTMulti, self).__init__(batch_size, padding_index, maxlen, batch_criteria, epoch_shuffle,
+        super(TorchTextMTMulti, self).__init__(batch_size, src_padding_index, tgt_padding_index,
+                                               maxlen, batch_criteria, epoch_shuffle,
                                                sampling_mode, device, **kwargs)
         self.file_path = file_path
         self.example_path = example_path
@@ -224,10 +227,12 @@ class TorchTextMTMulti(TorchTextMTBase):
 
 
 class TorchTextMTMultiTask(TorchTextMTBase):
-    def __init__(self, file_path, batch_size, example_path, padding_index, maxlen=512, batch_criteria='token',
+    def __init__(self, file_path, batch_size, example_path, src_padding_index, tgt_padding_index,
+                 maxlen=512, batch_criteria='token',
                  epoch_shuffle=True, sampling_mode=False, target_lang=None, over_sampling=False,
                  device='cuda', **kwargs):
-        super(TorchTextMTMultiTask, self).__init__(batch_size, padding_index, maxlen, batch_criteria, epoch_shuffle,
+        super(TorchTextMTMultiTask, self).__init__(batch_size, src_padding_index, tgt_padding_index,
+                                                   maxlen, batch_criteria, epoch_shuffle,
                                                    sampling_mode, device, **kwargs)
         self.fields.append(('src_lang', data.Field(sequential=False, use_vocab=False)))
         self.fields.append(('tgt_lang', data.Field(sequential=False, use_vocab=False)))

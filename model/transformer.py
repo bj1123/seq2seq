@@ -286,15 +286,18 @@ class DecoderNetwork(BaseNetwork):
 
 
 class EncoderDecoderBase(nn.Module):
-    def __init__(self, vocab_size: int, seq_len: int, hidden_dim: int, projection_dim: int, n_heads: int, head_dim: int,
-                 enc_num_layers: int, dec_num_layers: int, dropout_rate: float, dropatt_rate: float, padding_index: int,
+    def __init__(self, src_vocab_size: int, tgt_vocab_size, seq_len: int, hidden_dim: int, projection_dim: int,
+                 n_heads: int, head_dim: int, enc_num_layers: int, dec_num_layers: int, dropout_rate: float,
+                 dropatt_rate: float, src_padding_index: int, tgt_padding_index: int,
                  pre_lnorm: bool = False, same_lengths: bool = False, pos_enc: str = 'absolute', shared_embedding=False,
                  tie_embedding=False, **kwargs):
         super(EncoderDecoderBase, self).__init__()
         self.tie_embedding = tie_embedding
         self.shared_embedding = shared_embedding
-        self.padding_index = padding_index
-        self.vocab_size = vocab_size
+        self.src_padding_index = src_padding_index
+        self.tgt_padding_index = tgt_padding_index
+        self.src_vocab_size = src_vocab_size
+        self.tgt_vocab_size = tgt_vocab_size
         self.hidden_dim = hidden_dim
         self.projection_dim = projection_dim
         self.n_heads = n_heads
@@ -308,8 +311,10 @@ class EncoderDecoderBase(nn.Module):
         self.same_lengths = same_lengths
         self.pos_enc = pos_enc
 
-    def keyword_dict(self):
-        kwargs_dict = {'vocab_size': self.vocab_size, 'seq_len': self.seq_len, 'padding_index': self.padding_index}
+    def keyword_dict(self, mode='encoder'):
+        kwargs_dict = {'seq_len': self.seq_len}
+        kwargs_dict['vocab_size'] = self.src_vocab_size if mode =='encoder' else self.tgt_vocab_size
+        kwargs_dict['padding_index'] = self.src_padding_index if mode =='encoder' else self.tgt_padding_index
         if self.shared_embedding and hasattr(self, 'encoder'):
             kwargs_dict['embedding'] = self.encoder.embedding
         elif self.shared_embedding and hasattr(self, 'shared_encoders'):
@@ -319,17 +324,19 @@ class EncoderDecoderBase(nn.Module):
     def build_decoder_network(self, block_type=DecoderBlock):
         return DecoderNetwork(self.hidden_dim, self.projection_dim, self.n_heads, self.head_dim, self.dec_num_layers,
                               self.dropout_rate, self.dropatt_rate, self.pre_lnorm, self.same_lengths,
-                              self.pos_enc, decoder_block=block_type, **self.keyword_dict())
+                              self.pos_enc, decoder_block=block_type, **self.keyword_dict(mode='decoder'))
 
 
 class EncoderDecoderModel(EncoderDecoderBase):
-    def __init__(self, vocab_size: int, seq_len: int, hidden_dim: int, projection_dim: int, n_heads: int, head_dim: int,
-                 enc_num_layers: int, dec_num_layers: int, dropout_rate: float, dropatt_rate: float, padding_index: int,
+    def __init__(self, src_vocab_size: int, tgt_vocab_size, seq_len: int, hidden_dim: int, projection_dim: int,
+                 n_heads: int, head_dim: int, enc_num_layers: int, dec_num_layers: int, dropout_rate: float,
+                 dropatt_rate: float, src_padding_index: int, tgt_padding_index: int,
                  pre_lnorm: bool = False, same_lengths: bool = False, pos_enc: str = 'absolute', shared_embedding=False,
                  tie_embedding=False, **kwargs):
-        super(EncoderDecoderModel, self).__init__(vocab_size, seq_len, hidden_dim, projection_dim, n_heads, head_dim,
+        super(EncoderDecoderModel, self).__init__(src_vocab_size, tgt_vocab_size, seq_len, hidden_dim, projection_dim,
+                                                  n_heads, head_dim,
                                                   enc_num_layers, dec_num_layers, dropout_rate, dropatt_rate,
-                                                  padding_index,
+                                                  src_padding_index, tgt_padding_index,
                                                   pre_lnorm, same_lengths, pos_enc, shared_embedding, tie_embedding,
                                                   **kwargs)
         self.encoder = EncoderNetwork(hidden_dim, projection_dim, n_heads, head_dim, enc_num_layers, dropout_rate,
@@ -342,7 +349,7 @@ class EncoderDecoderModel(EncoderDecoderBase):
 
         else:
             # self.final = SemiAdaptiveSoftmax(vocab_size, hidden_dim)
-            self.final = nn.Linear(hidden_dim, vocab_size, bias=False)
+            self.final = nn.Linear(hidden_dim, tgt_vocab_size, bias=False)
 
     def encode_src(self, inp):
         src, src_len = inp['src'], inp['src_len']

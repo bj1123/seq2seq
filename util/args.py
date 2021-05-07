@@ -106,7 +106,8 @@ class MTArgument(BaseArgument):
         data['test_src_path'] = files_including(data['src_path'], 'test')
         data['test_tgt_path'] = files_including(data['tgt_path'], 'test')
         data['test_example_path'] = os.path.join(os.path.dirname(data['tgt_path']), 'te_examples')
-        data['padding_index'] = data['vocab_size'] - 1
+        data['src_padding_index'] = data['src_vocab_size'] - 1
+        data['tgt_padding_index'] = data['tgt_vocab_size'] - 1
         if data['prob_path']:
             data['cum_probs'] = load_json(data['prob_path'])
             data['cutoffs'] = self.get_indices(data['cum_probs'])
